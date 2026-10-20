@@ -4,11 +4,13 @@ import {
   ChevronRight,
   Clock3,
   Languages,
+  ChevronDown,
   RefreshCw,
   Type,
 } from 'lucide-react';
 import { WeatherSettings } from './weather-settings';
 import type { Language, Preferences } from '../types';
+import { useRef, useState } from 'react';
 import { wallpapers, wallpaperThumbnail } from '../wallpapers';
 import { useTranslation, wallpaperLabel } from '../i18n';
 
@@ -20,6 +22,21 @@ interface Props {
 
 export function Settings({ preferences, onUpdate, onRefresh }: Props) {
   const { t, language } = useTranslation();
+  const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
+  const languageButton = useRef<HTMLButtonElement>(null);
+  const chooseLanguage = (next: Language) => {
+    onUpdate({ language: next });
+    setLanguageMenuOpen(false);
+    requestAnimationFrame(() => languageButton.current?.focus({ preventScroll: true }));
+  };
+  const openLanguageMenu = () => {
+    setLanguageMenuOpen(true);
+    requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(`[data-focusable="language-option-${preferences.language}"]`)
+        ?.focus({ preventScroll: true });
+    });
+  };
   return (
     <section className="settings-page" aria-label={t('settingsRegion')}>
       <h1 className="sr-only">{t('settings')}</h1>
@@ -100,6 +117,7 @@ export function Settings({ preferences, onUpdate, onRefresh }: Props) {
                 role="switch"
                 aria-checked={preferences.reducedMotion}
                 data-focusable="setting-motion"
+                data-focus-down="setting-language"
                 onClick={() => onUpdate({ reducedMotion: !preferences.reducedMotion })}
               >
                 <Accessibility />
@@ -110,30 +128,110 @@ export function Settings({ preferences, onUpdate, onRefresh }: Props) {
                   <i />
                 </span>
               </button>
-              <label className="setting-row language-option" htmlFor="display-language">
+              <div className="setting-row language-option">
                 <Languages aria-hidden="true" />
                 <span>
                   <strong>{t('language')}</strong>
                 </span>
-                <select
-                  id="display-language"
-                  className="language-select"
+                <button
+                  ref={languageButton}
+                  type="button"
+                  className="language-trigger"
                   data-focusable="setting-language"
-                  aria-label={t('languageMenu')}
-                  value={preferences.language}
+                  data-focus-up="setting-motion"
+                  data-focus-down="setting-refresh"
+                  aria-haspopup="listbox"
+                  aria-expanded={languageMenuOpen}
+                  aria-label={`${t('languageMenu')}: ${t(preferences.language === 'en' ? 'english' : preferences.language === 'de' ? 'german' : 'chinese')}`}
                   onKeyDown={(event) => {
-                    if (event.key.startsWith('Arrow')) event.stopPropagation();
+                    if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      openLanguageMenu();
+                    } else if (event.key === 'Escape' || event.keyCode === 461) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setLanguageMenuOpen(false);
+                    }
                   }}
-                  onChange={(event) => onUpdate({ language: event.target.value as Language })}
+                  onClick={() =>
+                    languageMenuOpen ? setLanguageMenuOpen(false) : openLanguageMenu()
+                  }
                 >
-                  <option value="en">{t('english')}</option>
-                  <option value="de">{t('german')}</option>
-                  <option value="zh">{t('chinese')}</option>
-                </select>
-              </label>
+                  <span>
+                    {t(
+                      preferences.language === 'en'
+                        ? 'english'
+                        : preferences.language === 'de'
+                          ? 'german'
+                          : 'chinese',
+                    )}
+                  </span>
+                  <ChevronDown size={18} aria-hidden="true" />
+                </button>
+              </div>
+              {languageMenuOpen ? (
+                <div
+                  className="language-menu"
+                  role="listbox"
+                  tabIndex={-1}
+                  aria-label={t('languageMenu')}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === 'Escape' ||
+                      event.keyCode === 461 ||
+                      event.key === 'Backspace'
+                    ) {
+                      event.preventDefault();
+                      setLanguageMenuOpen(false);
+                      languageButton.current?.focus({ preventScroll: true });
+                    }
+                  }}
+                >
+                  {(
+                    [
+                      ['en', 'english'],
+                      ['de', 'german'],
+                      ['zh', 'chinese'],
+                    ] as const
+                  ).map(([option, label]) => (
+                    <button
+                      key={option}
+                      type="button"
+                      role="option"
+                      aria-selected={preferences.language === option}
+                      className="language-menu-option"
+                      data-focusable={`language-option-${option}`}
+                      data-focus-up={`language-option-${option === 'en' ? 'zh' : option === 'de' ? 'en' : 'de'}`}
+                      data-focus-down={`language-option-${option === 'en' ? 'de' : option === 'de' ? 'zh' : 'en'}`}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key === 'Escape' ||
+                          event.keyCode === 461 ||
+                          event.key === 'Backspace'
+                        ) {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setLanguageMenuOpen(false);
+                          languageButton.current?.focus({ preventScroll: true });
+                        }
+                      }}
+                      onClick={() => chooseLanguage(option)}
+                    >
+                      {t(label)}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div className="settings-group">
-              <button className="setting-row" data-focusable="setting-refresh" onClick={onRefresh}>
+              <button
+                className="setting-row"
+                data-focusable="setting-refresh"
+                data-focus-up="setting-language"
+                data-focus-down="setting-show-weather"
+                onClick={onRefresh}
+              >
                 <RefreshCw />
                 <span>
                   <strong>{t('refreshApps')}</strong>
