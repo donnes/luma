@@ -17,11 +17,30 @@ pnpm test:browser
 
 Build before running browser tests so packaged `file://` tests exercise the current code. Browser checks cover remote navigation, hold-OK options, favorites, settings, search, persistence, focus restoration, weather configuration, temperature units, caching, and TV-service failure behavior with a mock bridge. Weather APIs are mocked; tests do not connect to a TV. On Linux, install Chromium's dependencies with `pnpm exec playwright install --with-deps chromium`.
 
+## Verifying
+
+Smallest proof that the change works. Run only the tests you touched: `node --import tsx --test tests/<file>.test.ts` for a unit contract, `pnpm exec playwright test -g '<spec name>'` for one browser behavior, and targeted lint for changed paths (`pnpm exec oxlint <paths>`). CI owns the full suite on every pull request, so leave the sweeps (`pnpm check`, whole `pnpm test`, whole `pnpm test:browser`) to it unless asked; `pnpm typecheck` is whole-repo by design and cheap enough to run when types move.
+
+Test meaningful logic or observable behavior — the app a bridge launches, the preference a keypress saves, the focused control after a remote move — not internal wiring, static markup, or assertions that mirror the implementation. Never wait on sleeps or polling: assert the state change itself; a test that needs a timeout to pass is wrong.
+
+Behavior changes that cross the platform seam ship with focused unit tests for that platform's contract, and, when user-visible, with browser-test coverage through the mock bridge. When a user-visible change is integrated, run the packaged-file specs once — they exercise the built bundle over `file://`, which is the environment every TV actually receives. Packaged artifacts only get CI coverage for the webOS IPK, so for Tizen and Fire TV the smallest proof is running the packaging script and inspecting the result (`aapt2 dump badging`, `unzip -l`, `apksigner verify`), never eyeballing the build output.
+
+A TV or stick is the developer's real state: `pnpm deploy` to a TV or `adb install` to a stick replaces the installed app and its data, so it happens when the task asks for it, on the target that task names.
+
 ## Structure
 
 `src/` contains React/TypeScript UI, spatial navigation, local preferences, and the webOS bridge. `public/` contains locally bundled assets. `tools/` builds a classic-script app and IPK. `tv/autostart.sh` is the optional boot hook.
 
 Project filenames use lowercase kebab-case, including React components (for example, `app-tile.tsx`). Keep `package.json` and `appinfo.json` versions synchronized; change the version only when requested.
+
+## Hit every surface
+
+The most common defect here is a change that works on the one leg you tested and is missing everywhere else. Before calling a change done, walk this list and say which entries applied:
+
+- **Platforms.** The bridge has four implementations of one contract (`webos.ts`, `tizen.ts`, `android.ts`, `desktop.ts`), each paired with its packager (`tools/` for the IPK, `platforms/tizen`, `platforms/firetv`). An inventory, launch, Back, or preferences change needs a decision on every platform — including an explicit "not available here" carried as the bridge's user-facing warning, never silence.
+- **Entry points.** Anything a remote key does also has a pointer path (hover, click, right-click), and library actions have both keyboard and menu routes; fixing the keyboard handler alone is not fixing the feature.
+- **Assets.** Bundled art (icons, logos, wallpapers, thumbnails) flows through `pnpm assets` and `pnpm build` into every packager; adding or renaming a public asset means regenerating what each platform artifact expects.
+- **Docs.** When a change makes guidance in this file inaccurate, rewrite the affected lines rather than appending another account.
 
 ## Performance
 
