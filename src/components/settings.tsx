@@ -21,7 +21,7 @@ interface Props {
 export function Settings({ preferences, onUpdate, onRefresh }: Props) {
   const { t, language } = useTranslation();
   return (
-    <section className="settings-page" aria-label={t('settings')}>
+    <section className="settings-page" aria-label={t('settingsRegion')}>
       <h1 className="sr-only">{t('settings')}</h1>
       <div className="settings-layout">
         <section

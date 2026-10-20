@@ -95,6 +95,25 @@ test('full-page settings support remote navigation, Back, and persistent prefere
   await expect(page.locator('.luma')).toHaveClass(/reduce-motion/);
 });
 
+test('display language can be selected, updates the UI, and persists', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const language = page.getByRole('combobox', { name: 'Display language' });
+  await expect(language).toHaveValue('en');
+  await language.selectOption('de');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'de-DE');
+  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Luma-Einstellungen', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Oberfläche', exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Anzeigesprache' }).selectOption('zh');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
+  await expect(page.getByRole('button', { name: '主页', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Luma 设置', exact: true })).toBeVisible();
+});
+
 test('search, category filtering, empty results and Back work', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Apps', exact: true }).click();

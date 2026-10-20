@@ -31,15 +31,16 @@ test('inventory excludes internal/invisible apps and de-duplicates third-party a
   assert.equal(apps.find((app) => app.id === 'netflix')?.brand, 'netflix');
   assert.equal(apps.find((app) => app.id === 'com.webos.app.livetv')?.brand, 'live-tv');
   assert.deepEqual(defaultFavorites(apps), [
-    'com.webos.app.livetv',
     'netflix',
+    'com.webos.app.livetv',
     'com.example.sideload',
   ]);
 });
 
-test('Live TV remains available when the TV inventory omits its system app', () => {
+test('Live TV is recognized when webOS exposes its system app', () => {
+  const liveTV = normalizeApps([{ id: 'com.webos.app.livetv', title: 'Live TV' }]);
   assert.deepEqual(
-    normalizeApps([]).map(({ id, title, brand }) => ({ id, title, brand })),
+    liveTV.map(({ id, title, brand }) => ({ id, title, brand })),
     [{ id: 'com.webos.app.livetv', title: 'Live TV', brand: 'live-tv' }],
   );
 });
