@@ -14,7 +14,18 @@ test('inventory excludes internal/invisible apps and de-duplicates third-party a
   const apps = normalizeApps([
     { id: 'com.luma.launcher', title: 'Luma', visible: true },
     { id: 'com.webos.app.home', title: 'Home', visible: true },
-    { id: 'com.webos.app.livetv', title: 'Live TV' },
+    {
+      id: 'com.webos.app.livetv',
+      title: 'Live TV',
+      visible: false,
+      systemApp: true,
+    },
+    {
+      id: 'com.webos.app.lgchannels',
+      title: 'LG Channels',
+      visible: true,
+      systemApp: true,
+    },
     { id: 'com.webos.service.secret', title: 'Internal' },
     { id: 'netflix', title: 'Netflix', visible: true },
     { id: 'netflix', title: 'Duplicate', visible: true },
@@ -25,23 +36,32 @@ test('inventory excludes internal/invisible apps and de-duplicates third-party a
   ]);
   assert.deepEqual(apps.map((app) => app.id).sort(), [
     'com.example.sideload',
+    'com.webos.app.lgchannels',
     'com.webos.app.livetv',
     'netflix',
   ]);
   assert.equal(apps.find((app) => app.id === 'netflix')?.brand, 'netflix');
   assert.equal(apps.find((app) => app.id === 'com.webos.app.livetv')?.brand, 'live-tv');
+  assert.equal(apps.find((app) => app.id === 'com.webos.app.lgchannels')?.brand, 'live-tv');
   assert.deepEqual(defaultFavorites(apps), [
     'netflix',
+    'com.webos.app.lgchannels',
     'com.webos.app.livetv',
     'com.example.sideload',
   ]);
 });
 
 test('Live TV is recognized when webOS exposes its system app', () => {
-  const liveTV = normalizeApps([{ id: 'com.webos.app.livetv', title: 'Live TV' }]);
+  const liveTV = normalizeApps([
+    { id: 'com.webos.app.livetv', title: 'Live TV', visible: false },
+    { id: 'com.webos.app.lgchannels', title: 'LG Channels', visible: true },
+  ]);
   assert.deepEqual(
     liveTV.map(({ id, title, brand }) => ({ id, title, brand })),
-    [{ id: 'com.webos.app.livetv', title: 'Live TV', brand: 'live-tv' }],
+    [
+      { id: 'com.webos.app.lgchannels', title: 'LG Channels', brand: 'live-tv' },
+      { id: 'com.webos.app.livetv', title: 'Live TV', brand: 'live-tv' },
+    ],
   );
 });
 

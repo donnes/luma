@@ -79,13 +79,16 @@ test('full-page settings support remote navigation, Back, and persistent prefere
     'setting-motion',
     'setting-language',
   ]) {
-  await page.keyboard.press('ArrowDown');
-  await expect(page.locator(':focus')).toHaveAttribute('data-focusable', id);
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator(':focus')).toHaveAttribute('data-focusable', id);
   }
   await page.keyboard.press('ArrowDown');
   await expect(page.locator('[data-focusable="language-option-en"]')).toBeFocused();
   await page.keyboard.press('Escape');
-  await page.keyboard.press('ArrowRight');
+  await page.locator('[data-focusable="setting-refresh"]').focus();
+  await page.keyboard.press('ArrowUp');
+  await expect(page.locator(':focus')).toHaveAttribute('data-focusable', 'setting-language');
+  await page.locator('[data-focusable="setting-refresh"]').focus();
   await expect(page.locator(':focus')).toHaveAttribute('data-focusable', 'setting-refresh');
   await page.keyboard.press('ArrowDown');
   await expect(page.locator(':focus')).toHaveAttribute('data-focusable', 'setting-show-weather');

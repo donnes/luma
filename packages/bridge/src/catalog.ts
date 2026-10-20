@@ -136,7 +136,7 @@ export function sortApps(apps: TVApp[], favorites: readonly string[]): TVApp[] {
 }
 
 export function defaultFavorites(apps: TVApp[]): string[] {
-  const brands = ['netflix', 'youtube', 'apple', 'disney', 'prime', 'plex'];
+  const brands = ['netflix', 'youtube', 'apple', 'disney', 'prime', 'live-tv', 'plex'];
   const preferred = brands.flatMap((brand) => apps.find((app) => app.brand === brand)?.id ?? []);
   return [...new Set([...preferred, ...apps.map((app) => app.id)])].slice(0, 6);
 }
