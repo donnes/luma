@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@luma/bridge':
+        specifier: workspace:*
+        version: link:packages/bridge
       lucide-react:
         specifier: ^0.468.0
         version: 0.468.0(react@19.3.1)
@@ -54,6 +57,8 @@ importers:
       vite:
         specifier: 8.3.4
         version: 8.3.4(@types/node@24.19.2)(esbuild@0.27.7)(terser@5.48.0)(tsx@4.23.15)
+
+  packages/bridge: {}
 
 packages:
 

@@ -15,7 +15,7 @@ Use [Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel) on y
 2. Go to **Settings → Add repository**, enter this URL, and confirm:
 
    ```text
-   https://github.com/ecklf/lg-luma/releases/latest/download/repo.json
+   https://github.com/donnes/luma/releases/latest/download/repo.json
    ```
 
 3. Return to the app list, select **Luma**, and choose **Install**.
@@ -23,7 +23,7 @@ Use [Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel) on y
 
 ### Manual installation
 
-Download the `.ipk` from the [latest release](https://github.com/ecklf/lg-luma/releases/latest). Open [webOS Dev Manager](https://github.com/webosbrew/dev-manager-desktop), connect to your TV's IP address on port `22` as `root`, and install the downloaded package.
+Download the `.ipk` from the [latest release](https://github.com/donnes/luma/releases/latest). Open [webOS Dev Manager](https://github.com/webosbrew/dev-manager-desktop), connect to your TV's IP address on port `22` as `root`, and install the downloaded package.
 
 You can also install over SSH. Replace `TV_IP` with your TV's address and use the filename you downloaded:
 
@@ -97,8 +97,8 @@ The caller needs `lunabus.query`, and Homebrew's mapping should contain `{"lunab
 Use Node.js 22+ and pnpm 10 (the project pins pnpm 10.34.5):
 
 ```sh
-git clone https://github.com/ecklf/lg-luma.git
-cd lg-luma
+git clone https://github.com/donnes/luma.git
+cd luma
 pnpm install --frozen-lockfile
 pnpm dev
 ```
@@ -124,6 +124,10 @@ GitHub Actions checks pull requests and pushes to `main`, runs the unit and brow
 For each release, update the version in both `package.json` and `appinfo.json`, then merge to `main`. Already-published versions are skipped. To retry a failed run, use **Actions → CI → Run workflow** on `main`.
 
 The stable feed URL always serves the latest release. Contributor checks, controls, weather behavior, and the code map are documented in [agents.md](agents.md).
+
+## Credits
+
+A fork of [Luma for LG webOS](https://github.com/ecklf/lg-luma) by ecklf, extended to run on multiple TV platforms.
 
 ## License
 
