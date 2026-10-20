@@ -13,6 +13,7 @@ import {
 import type { TemperatureUnit, WeatherLocation } from '../types';
 import { useWeather } from '../use-weather';
 import { formatTemperature, weatherCondition } from '../weather';
+import { useTranslation } from '../i18n';
 
 const icons = {
   sun: Sun,
@@ -35,8 +36,9 @@ export function Weather({
   unit: TemperatureUnit;
   onConfigure?: () => void;
 }) {
+  const { language, t } = useTranslation();
   const { reading, failed, loading } = useWeather(location);
-  const condition = reading ? weatherCondition(reading.code, reading.isDay) : null;
+  const condition = reading ? weatherCondition(reading.code, reading.isDay, language) : null;
   const Icon = condition ? icons[condition.icon] : MapPin;
   const content = (
     <>
@@ -53,16 +55,16 @@ export function Weather({
                 {formatTemperature(reading.temperature, unit)}
               </span>
               <span className="weather-condition">{condition!.label}</span>
-              {failed ? <small className="weather-stale">Last saved reading</small> : null}
+              {failed ? <small className="weather-stale">{t('lastReading')}</small> : null}
             </>
           ) : (
             <span className="weather-condition">
-              {loading ? 'Loading weather…' : 'Weather unavailable'}
+              {loading ? t('loadingWeather') : t('weatherUnavailable')}
             </span>
           )}
         </>
       ) : (
-        <span>Set weather location</span>
+        <span>{t('setWeatherLocation')}</span>
       )}
     </>
   );
@@ -72,11 +74,9 @@ export function Weather({
       className="hero-subtitle weather-summary"
       data-focusable="weather-configure"
       onClick={onConfigure}
-      aria-label={
-        location
-          ? `Weather in ${location.name}. Configure weather location.`
-          : 'Set weather location'
-      }
+      aria-label={t(location ? 'weatherInLocation' : 'setWeatherLocation', {
+        city: location?.name ?? '',
+      })}
     >
       {content}
     </button>

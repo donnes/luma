@@ -71,6 +71,9 @@ test('corrupt or foreign preferences recover, while intentionally empty favorite
   assert.equal(parsePreferences('{broken').favorites, null);
   assert.equal(parsePreferences('{"version":99}').favorites, null);
   assert.equal(parsePreferences('{"version":1}').favorites, null);
+  assert.equal(parsePreferences('{"version":1,"language":"de"}').language, 'de');
+  assert.equal(parsePreferences('{"version":1,"language":"zh"}').language, 'zh');
+  assert.equal(parsePreferences('{"version":1,"language":"unknown"}').language, 'en');
   assert.deepEqual(parsePreferences('{"version":1,"favorites":[]}').favorites, []);
   const value = parsePreferences(
     JSON.stringify({

@@ -1,6 +1,7 @@
 import { ArrowUpRight } from 'lucide-react';
 import { ConnectionIcon } from './connection-icon';
 import type { TVInput } from '../types';
+import { useTranslation } from '../i18n';
 
 export function InputCard({
   input,
@@ -9,6 +10,7 @@ export function InputCard({
   input: TVInput;
   onLaunch: (input: TVInput) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <button
       className={`input-card input-${input.kind}`}
@@ -27,12 +29,12 @@ export function InputCard({
           {input.connected === true ? (
             <>
               <i className="status-dot" />
-              Connected
+              {t('connected')}
             </>
           ) : input.connected === false ? (
-            'No device connected'
+            t('noDevice')
           ) : (
-            'External input'
+            t('externalInput')
           )}
         </span>
       </span>

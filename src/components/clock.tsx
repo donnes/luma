@@ -1,19 +1,15 @@
 import { useEffect, useState } from 'react';
+import { localeFor, translate } from '../i18n';
+import type { Language } from '../types';
 
-const dateFormat = new Intl.DateTimeFormat(undefined, {
-  weekday: 'long',
-  month: 'long',
-  day: 'numeric',
-});
-const timeFormats = [false, true].map(
-  (hour12) =>
-    new Intl.DateTimeFormat(undefined, {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12,
-    }),
-);
-const formatTime = (now: Date, clock24: boolean) => timeFormats[clock24 ? 0 : 1].format(now);
+const formatTime = (now: Date, clock24: boolean, locale: string) =>
+  new Intl.DateTimeFormat(locale, {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: !clock24,
+  }).format(now);
+const formatDate = (now: Date, locale: string) =>
+  new Intl.DateTimeFormat(locale, { weekday: 'long', month: 'long', day: 'numeric' }).format(now);
 
 function useClock() {
   const [now, setNow] = useState(() => new Date());
@@ -39,40 +35,34 @@ function useClock() {
   return now;
 }
 
-export function Clock({ clock24 }: { clock24: boolean }) {
+export function Clock({ clock24, language }: { clock24: boolean; language: Language }) {
   const now = useClock();
   return (
     <time className="header-time" dateTime={now.toISOString()}>
-      {formatTime(now, clock24)}
+      {formatTime(now, clock24, localeFor(language))}
     </time>
   );
 }
 
-export function Greeting() {
+export function Greeting({ language }: { language: Language }) {
   const now = useClock();
   const hour = now.getHours();
   const greeting =
-    hour < 5
-      ? 'One more moment.'
-      : hour < 12
-        ? 'Good morning.'
-        : hour < 18
-          ? 'Good afternoon.'
-          : 'Good evening.';
+    hour < 5 ? 'greetingNight' : hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
   return (
     <>
-      <p className="eyebrow hero-date">{dateFormat.format(now)}</p>
-      <h1 id="greeting">{greeting}</h1>
+      <p className="eyebrow hero-date">{formatDate(now, localeFor(language))}</p>
+      <h1 id="greeting">{translate(language, greeting)}</h1>
     </>
   );
 }
 
-export function AmbientClock({ clock24 }: { clock24: boolean }) {
+export function AmbientClock({ clock24, language }: { clock24: boolean; language: Language }) {
   const now = useClock();
   return (
     <>
-      <span className="ambient-date">{dateFormat.format(now)}</span>
-      <span className="ambient-time">{formatTime(now, clock24)}</span>
+      <span className="ambient-date">{formatDate(now, localeFor(language))}</span>
+      <span className="ambient-time">{formatTime(now, clock24, localeFor(language))}</span>
     </>
   );
 }

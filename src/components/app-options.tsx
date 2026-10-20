@@ -2,6 +2,7 @@ import { Eye, EyeOff, Heart } from 'lucide-react';
 import type { PointerEvent } from 'react';
 import { Dialog } from './dialog';
 import type { TVApp } from '../types';
+import { categoryLabel, useTranslation } from '../i18n';
 
 interface Props {
   app: TVApp;
@@ -17,9 +18,10 @@ function focusAction(event: PointerEvent<HTMLButtonElement>) {
 }
 
 export function AppOptions({ app, favorites, hidden, onClose, onPin, onHide }: Props) {
+  const { t, language } = useTranslation();
   const pinned = favorites.includes(app.id);
   return (
-    <Dialog title={app.title} subtitle={app.category} onClose={onClose}>
+    <Dialog title={app.title} subtitle={categoryLabel(language, app.category)} onClose={onClose}>
       <div className="settings-group app-actions">
         <button
           className="setting-row"
@@ -30,7 +32,7 @@ export function AppOptions({ app, favorites, hidden, onClose, onPin, onHide }: P
         >
           <Heart fill={pinned ? 'currentColor' : 'none'} />
           <span>
-            <strong>{pinned ? 'Remove from favorites' : 'Add to favorites'}</strong>
+            <strong>{t(pinned ? 'removeFavorite' : 'addFavorite')}</strong>
           </span>
         </button>
         <button
@@ -41,7 +43,7 @@ export function AppOptions({ app, favorites, hidden, onClose, onPin, onHide }: P
         >
           {hidden ? <Eye /> : <EyeOff />}
           <span>
-            <strong>{hidden ? 'Show app' : 'Hide app'}</strong>
+            <strong>{t(hidden ? 'showApp' : 'hideApp')}</strong>
           </span>
         </button>
       </div>

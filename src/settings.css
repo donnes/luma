@@ -74,6 +74,34 @@
 .settings-page .setting-row small {
   font-size: 0.82rem;
 }
+.settings-page .language-option {
+  cursor: default;
+}
+.settings-page .language-select {
+  appearance: none;
+  -webkit-appearance: none;
+  min-width: 10rem;
+  padding: 0.7rem 3rem 0.7rem 1rem;
+  border: 1px solid #ffffff24;
+  border-radius: 0.6rem;
+  background: #171c21;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23eeeeee' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 1.1rem;
+  color: #f0f0f0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.settings-page .language-select:focus-visible {
+  outline: 2px solid #dedede;
+  outline-offset: 2px;
+}
+.settings-page .language-select option {
+  background: #171c21;
+  color: #f0f0f0;
+}
 .settings-version {
   font-size: 0.78rem;
   color: var(--muted);

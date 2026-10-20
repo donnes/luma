@@ -2,6 +2,7 @@ import { memo, useEffect, useRef } from 'react';
 import { ArrowLeft, ArrowRight, Heart, LoaderCircle } from 'lucide-react';
 import { Brand } from './brand';
 import type { TVApp } from '../types';
+import { useTranslation } from '../i18n';
 
 interface Props {
   app: TVApp;
@@ -24,6 +25,7 @@ export const AppTile = memo(function AppTile({
   onOptions,
   onHold,
 }: Props) {
+  const { t } = useTranslation();
   const hold = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const held = useRef(false);
   useEffect(() => () => clearTimeout(hold.current), []);
@@ -36,7 +38,7 @@ export const AppTile = memo(function AppTile({
       data-focusable={`${prefix}-${app.id}`}
       data-app-id={app.id}
       data-reordering={reordering || undefined}
-      aria-label={`${reordering ? 'Move' : 'Open'} ${app.title}`}
+      aria-label={`${t(reordering ? 'move' : 'open')} ${app.title}`}
       aria-haspopup={reordering ? undefined : 'dialog'}
       aria-describedby={reordering ? 'reorder-instructions' : undefined}
       onBlur={clearHold}
@@ -81,7 +83,7 @@ export const AppTile = memo(function AppTile({
             size={16}
             fill="currentColor"
             strokeWidth={0}
-            aria-label="Favorite"
+            aria-label={t('favorite')}
           />
         ) : null}
         {reordering ? (

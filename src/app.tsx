@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import {
   ArrowRight,
   CircleAlert,
@@ -27,6 +28,7 @@ import { loadPreferences, savePreferences } from './storage';
 import { wallpapers } from './wallpapers';
 import { moveFavorite } from './favorites';
 import type { Category, Inventory, Page, Preferences, TVApp, TVInput } from './types';
+import { categoryLabel, LanguageProvider, useTranslation } from './i18n';
 
 const categories: Category[] = ['Streaming', 'Music', 'Gaming', 'Utilities'];
 const focusFirstApp = () =>
@@ -36,11 +38,26 @@ const focusFirstApp = () =>
   )?.focus({ preventScroll: true });
 
 export function App() {
+  const [preferences, setPreferences] = useState(loadPreferences);
+  return (
+    <LanguageProvider language={preferences.language}>
+      <Launcher preferences={preferences} setPreferences={setPreferences} />
+    </LanguageProvider>
+  );
+}
+
+function Launcher({
+  preferences,
+  setPreferences,
+}: {
+  preferences: Preferences;
+  setPreferences: Dispatch<SetStateAction<Preferences>>;
+}) {
+  const { t, language } = useTranslation();
   const [page, setPage] = useState<Page>('home');
   const [inventory, setInventory] = useState<Inventory>({ apps: [], inputs: [], warnings: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [preferences, setPreferences] = useState(loadPreferences);
   const [optionsApp, setOptionsApp] = useState<TVApp | null>(null);
   const [reordering, setReordering] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -99,7 +116,7 @@ export function App() {
 
   const update = useCallback(
     (patch: Partial<Preferences>) => setPreferences((current) => ({ ...current, ...patch })),
-    [],
+    [setPreferences],
   );
 
   const refresh = useCallback(async () => {
@@ -117,12 +134,12 @@ export function App() {
         }));
     } catch (error) {
       if (version === reloadVersion.current)
-        setError(error instanceof Error ? error.message : 'Your TV couldn’t be reached.');
+        setError(error instanceof Error ? error.message : t('tvUnreachable'));
     } finally {
       refreshing.current = false;
       if (version === reloadVersion.current) setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect -- Synchronize with the external TV inventory on mount.
@@ -131,9 +148,9 @@ export function App() {
   useEffect(() => {
     if (!savePreferences(preferences)) {
       // oxlint-disable-next-line react/set-state-in-effect -- Report a failed external storage write, not derived UI state.
-      notify('Your changes couldn’t be saved. Device storage may be full.', true);
+      notify(t('savedError'), true);
     }
-  }, [preferences, notify]);
+  }, [preferences, notify, t]);
   useEffect(() => {
     const resume = () => {
       if (!document.hidden) {
@@ -183,7 +200,7 @@ export function App() {
     async (app: TVApp | TVInput) => {
       if (pendingLaunch.current || reordering) return;
       if (!isTV()) {
-        notify(`Desktop preview · ${app.title} will open on your TV.`);
+        notify(t('desktopPreview', { app: app.title }));
         return;
       }
       pendingLaunch.current = true;
@@ -196,13 +213,13 @@ export function App() {
             recent: [app.id, ...current.recent.filter((id) => id !== app.id)].slice(0, 12),
           }));
       } catch (error) {
-        notify(error instanceof Error ? error.message : 'This app couldn’t be opened.', true);
+        notify(error instanceof Error ? error.message : t('appOpenError'), true);
       } finally {
         pendingLaunch.current = false;
         setLaunching(null);
       }
     },
-    [notify, reordering],
+    [notify, reordering, setPreferences, t],
   );
 
   const onOptions = useCallback(
@@ -223,7 +240,7 @@ export function App() {
         return next === ids ? current : { ...current, favorites: next };
       });
     },
-    [inventory.apps],
+    [inventory.apps, setPreferences],
   );
 
   const actions = useRef<{
@@ -409,16 +426,16 @@ export function App() {
       {ambient ? (
         <button
           className="ambient-screen"
-          aria-label="Return to Luma"
+          aria-label={t('returnLuma')}
           onClick={() => setAmbient(false)}
           onPointerMove={() => setAmbient(false)}
         >
-          <AmbientClock clock24={preferences.clock24} />
+          <AmbientClock clock24={preferences.clock24} language={language} />
           <span className="ambient-hint">
             {preferences.showWeather && preferences.weatherLocation ? (
               <Weather location={preferences.weatherLocation} unit={preferences.temperatureUnit} />
             ) : (
-              'Press any button to return'
+              t('pressToReturn')
             )}
           </span>
         </button>
@@ -428,14 +445,14 @@ export function App() {
             className="header"
             data-focus-down={page === 'settings' ? 'setting-home-app-names' : undefined}
           >
-            <Clock clock24={preferences.clock24} />
+            <Clock clock24={preferences.clock24} language={language} />
             <Navigation page={page} onChange={openPage} />
             <div className="header-right">
               <button
                 className="icon-button settings-button"
                 data-focusable="tv-settings"
-                aria-label="TV settings"
-                title="TV settings"
+                aria-label={t('tvSettings')}
+                title={t('tvSettings')}
                 onClick={() =>
                   void onLaunch({
                     id: 'com.palm.app.settings',
@@ -454,7 +471,7 @@ export function App() {
               <>
                 <section className="hero" aria-labelledby="greeting">
                   <div className="hero-copy">
-                    <Greeting />
+                    <Greeting language={language} />
                     {preferences.showWeather ? (
                       <Weather
                         location={preferences.weatherLocation}
@@ -475,15 +492,15 @@ export function App() {
                 </section>
                 <section className="favorites-section" aria-labelledby="favorites-heading">
                   <div className="section-heading">
-                    <h2 id="favorites-heading">Favorites</h2>
+                    <h2 id="favorites-heading">{t('favorites')}</h2>
                     {reordering ? (
                       <span className="reorder-status" role="status">
-                        Move apps
+                        {t('moveApps')}
                       </span>
                     ) : null}
                   </div>
                   {loading && !inventory.apps.length ? (
-                    <div className="app-grid skeleton-grid" aria-label="Loading apps">
+                    <div className="app-grid skeleton-grid" aria-label={t('findingApps')}>
                       {Array.from({ length: 6 }, (_, index) => (
                         <div className="skeleton" key={index} />
                       ))}
@@ -491,14 +508,14 @@ export function App() {
                   ) : error && !inventory.apps.length ? (
                     <div className="empty-state">
                       <CircleAlert />
-                      <h3>A little help from your TV.</h3>
+                      <h3>{t('aLittleHelp')}</h3>
                       <p>{error}</p>
                       <button
                         className="primary-button"
                         data-focusable="retry"
                         onClick={() => void refresh()}
                       >
-                        Try again <ArrowRight size={18} />
+                        {t('retry')} <ArrowRight size={18} />
                       </button>
                     </div>
                   ) : favorites.length ? (
@@ -510,14 +527,14 @@ export function App() {
                   ) : (
                     <div className="empty-state empty-favorites">
                       <Heart />
-                      <h3>Make room for your favorites.</h3>
-                      <p>Find an app you love. Hold OK to pin it here.</p>
+                      <h3>{t('makeFavorites')}</h3>
+                      <p>{t('pinHint')}</p>
                       <button
                         className="primary-button"
                         data-focusable="browse-apps"
                         onClick={() => openPage('apps')}
                       >
-                        Explore your apps <ArrowRight size={18} />
+                        {t('exploreApps')} <ArrowRight size={18} />
                       </button>
                     </div>
                   )}
@@ -525,7 +542,7 @@ export function App() {
                 {inventory.inputs.length ? (
                   <section className="home-inputs" aria-labelledby="inputs-heading">
                     <div className="section-heading">
-                      <h2 id="inputs-heading">Inputs</h2>
+                      <h2 id="inputs-heading">{t('inputsHeading')}</h2>
                     </div>
                     <div className="input-grid home-input-grid">
                       {inventory.inputs.slice(0, 3).map((input) => (
@@ -538,9 +555,9 @@ export function App() {
             ) : null}
             {page === 'apps' ? (
               <>
-                <h1 className="sr-only">Apps</h1>
+                <h1 className="sr-only">{t('apps')}</h1>
                 <div className="library-toolbar" data-focus-scroll-top="true">
-                  <div className="filter-tabs" aria-label="App categories">
+                  <div className="filter-tabs" aria-label={t('appCategories')}>
                     {categories.map((item) => (
                       <button
                         key={item}
@@ -552,7 +569,7 @@ export function App() {
                           setCategory((current) => (current === item ? null : item));
                         }}
                       >
-                        {item}
+                        {categoryLabel(language, item)}
                       </button>
                     ))}
                     {hiddenCount ? (
@@ -565,14 +582,14 @@ export function App() {
                           setShowHidden((current) => !current);
                         }}
                       >
-                        Hidden ({hiddenCount})
+                        {t('hidden', { count: hiddenCount })}
                       </button>
                     ) : null}
                     {category || showHidden ? (
                       <button
                         className="filter-clear icon-button"
                         data-focusable="filter-clear"
-                        aria-label="Clear category filter"
+                        aria-label={t('dismissSearch')}
                         onClick={() => {
                           setCategory(null);
                           setShowHidden(false);
@@ -585,18 +602,18 @@ export function App() {
                   <label className="search-field">
                     <Search size={21} />
                     <input
-                      aria-label="Find an app"
+                      aria-label={t('findApp')}
                       data-focusable="search"
                       type="search"
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
-                      placeholder="Find an app"
+                      placeholder={t('findApp')}
                       autoComplete="off"
                     />
                     {query ? (
                       <button
                         data-focusable="search-clear"
-                        aria-label="Clear search"
+                        aria-label={t('clearCategory')}
                         onClick={() => setQuery('')}
                       >
                         <X size={18} />
@@ -620,20 +637,20 @@ export function App() {
                     <Grid2X2 />
                     <h3>
                       {loading
-                        ? 'Finding your apps…'
+                        ? t('findingApps')
                         : query
-                          ? 'Nothing here. Yet.'
+                          ? t('noMatches')
                           : showHidden
-                            ? 'No hidden apps.'
-                            : 'A little room for something new.'}
+                            ? t('noHidden')
+                            : t('roomForNew')}
                     </h3>
                     <p>
                       {error ||
                         (query
-                          ? `No apps match “${query}”. Try another name.`
+                          ? t('noMatchesHint', { query })
                           : showHidden
-                            ? 'Apps you hide will appear here.'
-                            : 'Apps in this category will appear here.')}
+                            ? t('hiddenHint')
+                            : t('noCategoryApps'))}
                     </p>
                     {error ? (
                       <button
@@ -641,7 +658,7 @@ export function App() {
                         data-focusable="library-retry"
                         onClick={() => void refresh()}
                       >
-                        Try again
+                        {t('retry')}
                       </button>
                     ) : null}
                   </div>
@@ -650,7 +667,7 @@ export function App() {
             ) : null}
             {page === 'inputs' ? (
               <>
-                <h1 className="sr-only">Inputs</h1>
+                <h1 className="sr-only">{t('inputs')}</h1>
                 {inventory.inputs.length ? (
                   <div className="input-grid full-input-grid">
                     {inventory.inputs.map((input) => (
@@ -660,16 +677,14 @@ export function App() {
                 ) : (
                   <div className="empty-state">
                     <Tv />
-                    <h3>{loading ? 'Finding your inputs…' : 'No inputs to show.'}</h3>
-                    <p>
-                      {inventory.warnings[0] || 'Your TV’s physical HDMI inputs will appear here.'}
-                    </p>
+                    <h3>{loading ? t('findingInputs') : t('noInputs')}</h3>
+                    <p>{inventory.warnings[0] || t('physicalInputs')}</p>
                     <button
                       className="primary-button"
                       data-focusable="inputs-retry"
                       onClick={() => void refresh()}
                     >
-                      Refresh inputs
+                      {t('refreshInputs')}
                     </button>
                   </div>
                 )}
@@ -681,7 +696,7 @@ export function App() {
                 onUpdate={update}
                 onRefresh={() => {
                   void refresh();
-                  notify('Refreshing your apps and inputs…');
+                  notify(t('refreshNotice'));
                 }}
               />
             ) : null}
@@ -690,7 +705,7 @@ export function App() {
                 <CircleAlert size={18} />
                 <span>{error}</span>
                 <button data-focusable="refresh-error" onClick={() => void refresh()}>
-                  Retry
+                  {t('retry')}
                 </button>
               </div>
             ) : null}
@@ -701,27 +716,30 @@ export function App() {
                 {reordering ? (
                   <>
                     <span>
-                      <span className="keycap">← →</span>Move
+                      <span className="keycap">← →</span>
+                      {t('move')}
                     </span>
                     <span>
-                      <span className="keycap">Back</span>Done
+                      <span className="keycap">Back</span>
+                      {t('done')}
                     </span>
                   </>
                 ) : (
                   <>
                     <span>
                       <span className="keycap keycap-ok">OK</span>
-                      {page === 'settings' ? 'Select' : 'Open'}
+                      {page === 'settings' ? t('select') : t('open')}
                     </span>
                     <span>
                       {page === 'settings' ? (
                         <>
-                          <span className="keycap">Back</span>Home
+                          <span className="keycap">Back</span>
+                          {t('homeLabel')}
                         </>
                       ) : (
                         <>
                           <MoreHorizontal size={19} />
-                          Hold OK for options
+                          {t('options')}
                         </>
                       )}
                     </span>
@@ -738,7 +756,7 @@ export function App() {
                 <button
                   className="ambient-button"
                   data-focusable="ambient"
-                  aria-label="Enter ambient mode"
+                  aria-label={t('ambientMode')}
                   onClick={() => {
                     setReordering(null);
                     setAmbient(true);
@@ -771,8 +789,8 @@ export function App() {
             setOptionsApp(null);
             notify(
               pinned
-                ? `${optionsApp.title} removed from favorites.`
-                : `${optionsApp.title} added to favorites.`,
+                ? t('favoriteRemoved', { app: optionsApp.title })
+                : t('favoriteAdded', { app: optionsApp.title }),
             );
           }}
           onHide={() => {
@@ -786,8 +804,8 @@ export function App() {
             if (hidden && hiddenCount === 1) setShowHidden(false);
             notify(
               hidden
-                ? `${optionsApp.title} is back in your library.`
-                : `${optionsApp.title} hidden. You can restore it from Apps.`,
+                ? t('appRestored', { app: optionsApp.title })
+                : t('appHidden', { app: optionsApp.title }),
             );
           }}
         />
@@ -799,7 +817,7 @@ export function App() {
         >
           {toast.error ? <CircleAlert size={20} /> : <Sparkles size={20} />}
           <span>{toast.text}</span>
-          <button aria-label="Dismiss notification" onClick={() => setToast(null)}>
+          <button aria-label={t('dismissNotification')} onClick={() => setToast(null)}>
             <X size={18} />
           </button>
         </div>
@@ -807,7 +825,7 @@ export function App() {
       {launching ? (
         <div className="launch-status" role="status">
           <LoaderCircle className="spin" size={18} />
-          Opening…
+          {t('opening')}
         </div>
       ) : null}
     </div>

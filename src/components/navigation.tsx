@@ -1,11 +1,12 @@
 import { memo, useCallback, useLayoutEffect, useRef } from 'react';
 import type { Page } from '../types';
+import { useTranslation } from '../i18n';
 
-const tabs: { id: Page; title: string }[] = [
-  { id: 'home', title: 'Home' },
-  { id: 'apps', title: 'Apps' },
-  { id: 'inputs', title: 'Inputs' },
-  { id: 'settings', title: 'Settings' },
+const tabs: { id: Page; label: 'home' | 'apps' | 'inputs' | 'settings' }[] = [
+  { id: 'home', label: 'home' },
+  { id: 'apps', label: 'apps' },
+  { id: 'inputs', label: 'inputs' },
+  { id: 'settings', label: 'settings' },
 ];
 
 export const Navigation = memo(function Navigation({
@@ -15,6 +16,7 @@ export const Navigation = memo(function Navigation({
   page: Page;
   onChange: (page: Page) => void;
 }) {
+  const { t } = useTranslation();
   const navigation = useRef<HTMLElement>(null);
   const indicator = useRef<HTMLSpanElement>(null);
   const positioned = useRef(false);
@@ -46,7 +48,7 @@ export const Navigation = memo(function Navigation({
   }, [positionIndicator]);
 
   return (
-    <nav ref={navigation} className="navigation" aria-label="Main navigation">
+    <nav ref={navigation} className="navigation" aria-label={t('mainNavigation')}>
       <span ref={indicator} className="nav-indicator" aria-hidden="true" />
       {tabs.map((tab) => (
         <button
@@ -56,7 +58,7 @@ export const Navigation = memo(function Navigation({
           aria-current={page === tab.id ? 'page' : undefined}
           onClick={() => onChange(tab.id)}
         >
-          <span>{tab.title}</span>
+          <span>{t(tab.label)}</span>
         </button>
       ))}
     </nav>

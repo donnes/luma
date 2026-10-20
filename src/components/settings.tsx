@@ -1,7 +1,16 @@
-import { Accessibility, Check, ChevronRight, Clock3, RefreshCw, Type } from 'lucide-react';
+import {
+  Accessibility,
+  Check,
+  ChevronRight,
+  Clock3,
+  Languages,
+  RefreshCw,
+  Type,
+} from 'lucide-react';
 import { WeatherSettings } from './weather-settings';
-import type { Preferences } from '../types';
+import type { Language, Preferences } from '../types';
 import { wallpapers, wallpaperThumbnail } from '../wallpapers';
+import { useTranslation, wallpaperLabel } from '../i18n';
 
 interface Props {
   preferences: Preferences;
@@ -10,16 +19,17 @@ interface Props {
 }
 
 export function Settings({ preferences, onUpdate, onRefresh }: Props) {
+  const { t, language } = useTranslation();
   return (
-    <section className="settings-page" aria-label="Luma settings">
-      <h1 className="sr-only">Settings</h1>
+    <section className="settings-page" aria-label={t('settings')}>
+      <h1 className="sr-only">{t('settings')}</h1>
       <div className="settings-layout">
         <section
           className="settings-panel settings-backgrounds"
           aria-labelledby="background-heading"
         >
           <h2 className="settings-section-title" id="background-heading">
-            Background
+            {t('background')}
           </h2>
           <div className="wallpaper-options">
             {wallpapers.map((wallpaper) => (
@@ -43,7 +53,7 @@ export function Settings({ preferences, onUpdate, onRefresh }: Props) {
                     </span>
                   ) : null}
                 </span>
-                <span>{wallpaper.title}</span>
+                <span>{wallpaperLabel(language, wallpaper.id, wallpaper.title)}</span>
               </button>
             ))}
           </div>
@@ -51,7 +61,7 @@ export function Settings({ preferences, onUpdate, onRefresh }: Props) {
         <div className="settings-controls">
           <section className="settings-panel" aria-labelledby="interface-heading">
             <h2 className="settings-section-title" id="interface-heading">
-              Interface
+              {t('interface')}
             </h2>
             <div className="settings-group">
               <button
@@ -64,7 +74,7 @@ export function Settings({ preferences, onUpdate, onRefresh }: Props) {
               >
                 <Type />
                 <span>
-                  <strong>Show app names on Home</strong>
+                  <strong>{t('showAppNames')}</strong>
                 </span>
                 <span className={`toggle${preferences.showHomeAppNames ? ' on' : ''}`}>
                   <i />
@@ -79,7 +89,7 @@ export function Settings({ preferences, onUpdate, onRefresh }: Props) {
               >
                 <Clock3 />
                 <span>
-                  <strong>24-hour clock</strong>
+                  <strong>{t('clock24')}</strong>
                 </span>
                 <span className={`toggle${preferences.clock24 ? ' on' : ''}`}>
                   <i />
@@ -94,18 +104,39 @@ export function Settings({ preferences, onUpdate, onRefresh }: Props) {
               >
                 <Accessibility />
                 <span>
-                  <strong>Reduced motion</strong>
+                  <strong>{t('reducedMotion')}</strong>
                 </span>
                 <span className={`toggle${preferences.reducedMotion ? ' on' : ''}`}>
                   <i />
                 </span>
               </button>
+              <label className="setting-row language-option" htmlFor="display-language">
+                <Languages aria-hidden="true" />
+                <span>
+                  <strong>{t('language')}</strong>
+                </span>
+                <select
+                  id="display-language"
+                  className="language-select"
+                  data-focusable="setting-language"
+                  aria-label={t('languageMenu')}
+                  value={preferences.language}
+                  onKeyDown={(event) => {
+                    if (event.key.startsWith('Arrow')) event.stopPropagation();
+                  }}
+                  onChange={(event) => onUpdate({ language: event.target.value as Language })}
+                >
+                  <option value="en">{t('english')}</option>
+                  <option value="de">{t('german')}</option>
+                  <option value="zh">{t('chinese')}</option>
+                </select>
+              </label>
             </div>
             <div className="settings-group">
               <button className="setting-row" data-focusable="setting-refresh" onClick={onRefresh}>
                 <RefreshCw />
                 <span>
-                  <strong>Refresh apps & inputs</strong>
+                  <strong>{t('refreshApps')}</strong>
                 </span>
                 <ChevronRight />
               </button>

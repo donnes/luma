@@ -1,4 +1,4 @@
-import type { TemperatureUnit, WeatherLocation, WeatherReading } from './types';
+import type { Language, TemperatureUnit, WeatherLocation, WeatherReading } from './types';
 
 export const WEATHER_CACHE_KEY = 'luma.weather.v1';
 export const WEATHER_REFRESH_MS = 15 * 60 * 1000;
@@ -69,11 +69,18 @@ async function requestJSON(url: URL, signal?: AbortSignal): Promise<unknown> {
 export async function searchLocations(
   query: string,
   signal?: AbortSignal,
+  language: Language = 'en',
 ): Promise<WeatherLocation[]> {
   const name = query.trim().slice(0, 120);
   if (name.length < 2) throw new Error('Enter at least two characters.');
   const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
-  url.search = new URLSearchParams({ name, count: '6', language: 'en', format: 'json' }).toString();
+  const apiLanguage = language === 'zh' ? 'zh' : language;
+  url.search = new URLSearchParams({
+    name,
+    count: '6',
+    language: apiLanguage,
+    format: 'json',
+  }).toString();
   const value = await requestJSON(url, signal);
   if (
     !record(value) ||
@@ -180,19 +187,59 @@ export function clearWeatherCache(): void {
 export function weatherCondition(
   code: number,
   isDay: boolean,
+  language: Language = 'en',
 ): {
   label: string;
   icon: 'sun' | 'moon' | 'partly-cloudy' | 'cloud' | 'fog' | 'drizzle' | 'rain' | 'snow' | 'storm';
 } {
-  if (code === 0)
-    return { label: isDay ? 'Clear skies' : 'Clear night', icon: isDay ? 'sun' : 'moon' };
-  if (code === 1 || code === 2)
-    return { label: code === 1 ? 'Mostly clear' : 'Partly cloudy', icon: 'partly-cloudy' };
-  if (code === 3) return { label: 'Overcast', icon: 'cloud' };
-  if (code === 45 || code === 48) return { label: 'Fog', icon: 'fog' };
-  if ([51, 53, 55, 56, 57].includes(code)) return { label: 'Drizzle', icon: 'drizzle' };
-  if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return { label: 'Rain', icon: 'rain' };
-  if ([71, 73, 75, 77, 85, 86].includes(code)) return { label: 'Snow', icon: 'snow' };
-  if ([95, 96, 99].includes(code)) return { label: 'Thunderstorms', icon: 'storm' };
-  return { label: 'Current weather', icon: 'cloud' };
+  const labels = {
+    en: [
+      'Clear skies',
+      'Clear night',
+      'Mostly clear',
+      'Partly cloudy',
+      'Overcast',
+      'Fog',
+      'Drizzle',
+      'Rain',
+      'Snow',
+      'Thunderstorms',
+      'Current weather',
+    ],
+    de: [
+      'Klarer Himmel',
+      'Klare Nacht',
+      'Überwiegend klar',
+      'Teilweise bewölkt',
+      'Bedeckt',
+      'Nebel',
+      'Nieselregen',
+      'Regen',
+      'Schnee',
+      'Gewitter',
+      'Aktuelles Wetter',
+    ],
+    zh: [
+      '晴朗',
+      '晴朗的夜晚',
+      '大致晴朗',
+      '局部多云',
+      '阴天',
+      '雾',
+      '毛毛雨',
+      '雨',
+      '雪',
+      '雷暴',
+      '当前天气',
+    ],
+  }[language];
+  if (code === 0) return { label: labels[isDay ? 0 : 1], icon: isDay ? 'sun' : 'moon' };
+  if (code === 1 || code === 2) return { label: labels[code === 1 ? 2 : 3], icon: 'partly-cloudy' };
+  if (code === 3) return { label: labels[4], icon: 'cloud' };
+  if (code === 45 || code === 48) return { label: labels[5], icon: 'fog' };
+  if ([51, 53, 55, 56, 57].includes(code)) return { label: labels[6], icon: 'drizzle' };
+  if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return { label: labels[7], icon: 'rain' };
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return { label: labels[8], icon: 'snow' };
+  if ([95, 96, 99].includes(code)) return { label: labels[9], icon: 'storm' };
+  return { label: labels[10], icon: 'cloud' };
 }

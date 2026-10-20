@@ -14,6 +14,7 @@ export const defaults: Preferences = {
   showHomeAppNames: false,
   showWeather: true,
   temperatureUnit: 'celsius',
+  language: 'en',
   weatherLocation: null,
 };
 
@@ -45,6 +46,7 @@ export function parsePreferences(raw: string | null): Preferences {
       showHomeAppNames: value.showHomeAppNames === true,
       showWeather: value.showWeather !== false,
       temperatureUnit: value.temperatureUnit === 'fahrenheit' ? 'fahrenheit' : 'celsius',
+      language: value.language === 'de' || value.language === 'zh' ? value.language : 'en',
       weatherLocation: parseLocation(value.weatherLocation),
     };
   } catch {

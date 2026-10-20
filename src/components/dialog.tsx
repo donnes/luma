@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
+import { useTranslation } from '../i18n';
 
 export function Dialog({
   title,
@@ -16,6 +17,7 @@ export function Dialog({
   wide?: boolean;
   footerEnd?: ReactNode;
 }) {
+  const { t } = useTranslation();
   const panel = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -73,7 +75,7 @@ export function Dialog({
           </div>
           <button
             className="icon-button close-button"
-            aria-label="Close"
+            aria-label={t('closeDialog')}
             data-focusable="dialog-close"
             onPointerEnter={(event) => {
               if (event.pointerType === 'mouse') event.currentTarget.focus({ preventScroll: true });
@@ -86,7 +88,8 @@ export function Dialog({
         {children}
         <div className="dialog-footer">
           <div className="dialog-shortcuts">
-            <span className="keycap">OK</span> Select <span className="keycap">Back</span> Close
+            <span className="keycap">OK</span> {t('selectClose')}{' '}
+            <span className="keycap">Back</span> {t('close')}
           </div>
           {footerEnd ? <div className="dialog-footer-end">{footerEnd}</div> : null}
         </div>
