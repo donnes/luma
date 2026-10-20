@@ -6,6 +6,12 @@
 
   <uses-permission android:name="android.permission.INTERNET" />
 
+  <!-- Luma's activity and its HomeGuard process talk over broadcasts only this app may send. -->
+  <permission
+      android:name="com.luma.launcher.permission.HOME_GUARD"
+      android:protectionLevel="signature" />
+  <uses-permission android:name="com.luma.launcher.permission.HOME_GUARD" />
+
   <!-- Luma is TV-first; keep the build side-loadable on handhelds too. -->
   <uses-feature android:name="android.software.leanback" android:required="false" />
   <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -30,5 +36,20 @@
         <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
       </intent-filter>
     </activity>
+    <!-- Returns to Luma whenever Fire OS shows Amazon's home screen. Its own
+         process survives the low-memory killer taking down the WebView. -->
+    <service
+        android:name="app.luma.firetv.HomeGuard"
+        android:process=":guard"
+        android:label="Luma home"
+        android:exported="true"
+        android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+      <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService" />
+      </intent-filter>
+      <meta-data
+          android:name="android.accessibilityservice"
+          android:resource="@xml/home_guard" />
+    </service>
   </application>
 </manifest>

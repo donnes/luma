@@ -45,6 +45,23 @@ test('Live TV is recognized when webOS exposes its system app', () => {
   );
 });
 
+test('Prime Video is recognized on webOS and Fire OS without claiming other Amazon apps', () => {
+  const brands = Object.fromEntries(
+    normalizeApps([
+      { id: 'amazon', title: 'Prime Video' },
+      { id: 'com.amazon.firebat', title: 'Prime Video' },
+      { id: 'com.amazon.bueller.music', title: 'Amazon Music' },
+      { id: 'com.amazon.venezia', title: 'Appstore' },
+    ]).map((app) => [app.id, app.brand]),
+  );
+  assert.deepEqual(brands, {
+    amazon: 'prime',
+    'com.amazon.firebat': 'prime',
+    'com.amazon.bueller.music': 'generic',
+    'com.amazon.venezia': 'generic',
+  });
+});
+
 test('inputs require a consistent physical identity and never guess extra sockets', () => {
   const inputs = normalizeInputs([
     {
