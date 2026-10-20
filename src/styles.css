@@ -1,3 +1,4 @@
+@import './icon-colours.css';
 @import url('./fonts.css');
 
 :root {
@@ -722,7 +723,7 @@ button svg {
   gap: 1rem;
   padding-top: 1rem;
   color: #eeeeee5e;
-  font-size: 0.77rem;
+  font-size: 0.9rem;
   letter-spacing: 0.005em;
 }
 .remote-hints {
@@ -741,11 +742,11 @@ button svg {
   height: 1.2rem;
 }
 .keycap {
-  font-size: 0.6rem;
+  font-size: 0.72rem;
   border: 1px solid #ffffff32;
   border-radius: 0.3rem;
-  min-width: 1.5rem;
-  height: 1.3rem;
+  min-width: 1.65rem;
+  height: 1.45rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1615,4 +1616,22 @@ button svg {
   .ambient-hint {
     padding: 0 2rem;
   }
+}
+
+/* Installed app icons retain their proportions; their background fills the card. */
+.brand-installed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+.brand-installed-icon {
+  width: 68%;
+  height: 68%;
+  object-fit: contain;
+  border-radius: 0;
+}
+.app-face:has(.brand-installed)::after {
+  background: none;
 }

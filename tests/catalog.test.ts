@@ -14,6 +14,7 @@ test('inventory excludes internal/invisible apps and de-duplicates third-party a
   const apps = normalizeApps([
     { id: 'com.luma.launcher', title: 'Luma', visible: true },
     { id: 'com.webos.app.home', title: 'Home', visible: true },
+    { id: 'com.webos.app.livetv', title: 'Live TV' },
     { id: 'com.webos.service.secret', title: 'Internal' },
     { id: 'netflix', title: 'Netflix', visible: true },
     { id: 'netflix', title: 'Duplicate', visible: true },
@@ -22,9 +23,25 @@ test('inventory excludes internal/invisible apps and de-duplicates third-party a
     { id: 'com.webos.app.hdmi1', title: 'HDMI 1', visible: true },
     { id: "bad'; rm -rf /", title: 'Bad', visible: true },
   ]);
-  assert.deepEqual(apps.map((app) => app.id).sort(), ['com.example.sideload', 'netflix']);
+  assert.deepEqual(apps.map((app) => app.id).sort(), [
+    'com.example.sideload',
+    'com.webos.app.livetv',
+    'netflix',
+  ]);
   assert.equal(apps.find((app) => app.id === 'netflix')?.brand, 'netflix');
-  assert.deepEqual(defaultFavorites(apps), ['netflix', 'com.example.sideload']);
+  assert.equal(apps.find((app) => app.id === 'com.webos.app.livetv')?.brand, 'live-tv');
+  assert.deepEqual(defaultFavorites(apps), [
+    'com.webos.app.livetv',
+    'netflix',
+    'com.example.sideload',
+  ]);
+});
+
+test('Live TV remains available when the TV inventory omits its system app', () => {
+  assert.deepEqual(
+    normalizeApps([]).map(({ id, title, brand }) => ({ id, title, brand })),
+    [{ id: 'com.webos.app.livetv', title: 'Live TV', brand: 'live-tv' }],
+  );
 });
 
 test('inputs require a consistent physical identity and never guess extra sockets', () => {

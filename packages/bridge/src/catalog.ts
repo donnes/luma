@@ -1,6 +1,7 @@
 import type { TVApp, TVInput, Category } from './types';
 
 const identities: { match: RegExp; brand: string; category: Category }[] = [
+  { match: /(?:com\.webos\.app\.livetv|live[\s._-]*tv)/i, brand: 'live-tv', category: 'Streaming' },
   { match: /netflix/i, brand: 'netflix', category: 'Streaming' },
   { match: /youtube/i, brand: 'youtube', category: 'Streaming' },
   { match: /disney/i, brand: 'disney', category: 'Streaming' },
@@ -57,7 +58,11 @@ export function normalizeApps(raw: unknown): TVApp[] {
         entry.id.startsWith('com.webos.app.externalinput.')
       )
         return [];
-      if (entry.visible !== true && /^(com\.webos\.|com\.palm\.|com\.lge\.)/.test(entry.id))
+      if (
+        entry.visible !== true &&
+        entry.id !== 'com.webos.app.livetv' &&
+        /^(com\.webos\.|com\.palm\.|com\.lge\.)/.test(entry.id)
+      )
         return [];
       seen.add(entry.id);
       const title =
@@ -132,6 +137,7 @@ export function defaultFavorites(apps: TVApp[]): string[] {
 
 // Fixtures exist only in the desktop preview. A TV never falls back to these.
 export const demoApps = [
+  ['com.webos.app.livetv', 'Live TV'],
   ['netflix', 'Netflix'],
   ['youtube.leanback.v4', 'YouTube'],
   ['com.apple.appletv', 'Apple TV'],

@@ -11,6 +11,7 @@ export type Wallpaper =
   | 'northern-lights';
 export type Category = 'Streaming' | 'Music' | 'Gaming' | 'Utilities';
 export type TemperatureUnit = 'celsius' | 'fahrenheit';
+export type Language = 'en' | 'de' | 'zh';
 
 export interface TVApp {
   id: string;
@@ -38,6 +39,7 @@ export interface Preferences {
   showHomeAppNames: boolean;
   showWeather: boolean;
   temperatureUnit: TemperatureUnit;
+  language: Language;
   weatherLocation: WeatherLocation | null;
 }
 
