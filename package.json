@@ -28,6 +28,7 @@
     "assets": "node tools/assets.mjs"
   },
   "dependencies": {
+    "@luma/bridge": "workspace:*",
     "lucide-react": "^0.468.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
