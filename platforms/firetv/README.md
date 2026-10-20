@@ -76,14 +76,45 @@ adb install -r platforms/firetv/luma.apk
 Afterward log in over the network at `adb logcat luma:V adb:d *:S` to watch
 console output, and `adb shell monkey -p com.luma.launcher 1` to launch.
 
-## Home button
+## Staying in Luma
 
-Launcher Manager / Wolf Launcher can route the Home key to Luma, giving a
-launcher feel that Tizen and stock Android TV don't allow. `exit()` parks the
-task rather than finishing it, so Home-style relaunch times stay instant.
+Fire OS won't accept a replacement home screen: Home always opens Amazon's
+launcher, and most apps exit to it. The APK includes an accessibility service,
+`app.luma.firetv.HomeGuard`, that watches window changes of
+`com.amazon.tv.launcher` and brings Luma back whenever it appears. It also
+opens Luma after a reboot, because enabled services start with the system.
+It runs in its own `:guard` process so the low-memory killer can take the
+WebView without taking the service along.
+
+Enable it once over ADB (Fire OS 7 has no toggle for side-loaded services):
+
+```sh
+adb shell settings put secure enabled_accessibility_services \
+  com.luma.launcher/app.luma.firetv.HomeGuard
+adb shell settings put secure accessibility_enabled 1
+```
+
+That command replaces the list of enabled services; check
+`adb shell settings get secure enabled_accessibility_services` first if
+others are in use. To turn it off, set the list to `'""'`.
+
+**Pin Luma to the Fire TV home bar** (Your apps → select Luma → Menu →
+Move to front). After Home, Android blocks background activity starts for
+about five seconds, but the foreground app is exempt; with Luma pinned, the
+service clicks its tile and Amazon's launcher opens Luma itself.
+
+- Backing out of an app returns to Luma immediately.
+- Home reaches Luma in about 2.5–4 seconds when pinned (five otherwise). The
+  service can only react once Amazon's home draws: Android 9 handles Home
+  before accessibility key filters, and Fire OS keeps the `homekey` broadcast
+  to its own apps. Until Luma is back, an overlay in Luma's colours hides
+  Amazon's home and swallows remote keys.
+- While the service is on, Back on Luma's home screen stays in Luma instead
+  of parking the task. Fire TV Settings is a separate app and still opens
+  from the Home long-press menu.
 
 ## TODO
 
-- [ ] Boot autostart via `RECEIVE_BOOT_COMPLETED` + Launcher Manager
+- [x] Return to Luma from apps, Home and boot (`HomeGuard`)
 - [x] WebView shell project (Java, `platforms/firetv/android/`)
 - [x] `adb connect <stick-ip> && adb install` deployment

@@ -99,6 +99,11 @@ public final class Shell {
 
   @JavascriptInterface
   public synchronized void exit() {
+    // With HomeGuard on, parking the task would only flash Amazon's home
+    // before the guard brings Luma back, so Back on Luma's home stays put.
+    if (HomeGuard.isEnabled(activity)) {
+      return;
+    }
     // Park the shell task instead of finishing it: the remote's Back key may
     // already have been handled inside the app, and a relaunch is instant.
     main.post(() -> activity.moveTaskToBack(true));

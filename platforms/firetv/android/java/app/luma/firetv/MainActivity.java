@@ -44,7 +44,11 @@ public class MainActivity extends Activity {
   private static final String ASSET_ROOT = "app/";
   private static final String TAG = "luma";
 
+  /** Long enough for the resumed window's first frame to reach the screen. */
+  private static final long UNCOVER_DELAY_MS = 150;
+
   private WebView webView;
+  private final Runnable reportShown = () -> HomeGuard.report(this, true);
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -65,6 +69,8 @@ public class MainActivity extends Activity {
 
   @Override
   protected void onPause() {
+    webView.removeCallbacks(reportShown);
+    HomeGuard.report(this, false);
     webView.onPause();
     super.onPause();
   }
@@ -74,6 +80,9 @@ public class MainActivity extends Activity {
     super.onResume();
     webView.onResume();
     enterImmersive();
+    // HomeGuard may be covering Amazon's home; let it drop the cover once the
+    // real window has drawn underneath.
+    webView.postDelayed(reportShown, UNCOVER_DELAY_MS);
   }
 
   @Override

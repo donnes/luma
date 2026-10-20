@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only window changes of Amazon's launcher reach HomeGuard; window content
+     is read there to find and click the pinned Luma tile. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:packageNames="com.amazon.tv.launcher"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/home_guard_description" />

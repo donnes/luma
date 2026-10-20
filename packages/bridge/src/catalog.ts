@@ -6,7 +6,9 @@ const identities: { match: RegExp; brand: string; category: Category }[] = [
   { match: /youtube/i, brand: 'youtube', category: 'Streaming' },
   { match: /disney/i, brand: 'disney', category: 'Streaming' },
   { match: /apple.?tv|appletv/i, brand: 'apple', category: 'Streaming' },
-  { match: /amazon|prime.?video/i, brand: 'prime', category: 'Streaming' },
+  // webOS ships Prime Video as the bare id `amazon`; Fire OS names every
+  // system app `com.amazon.*`, so only the title identifies Prime Video there.
+  { match: /^amazon\b|prime.?video/i, brand: 'prime', category: 'Streaming' },
   { match: /jellyfin/i, brand: 'jellyfin', category: 'Streaming' },
   { match: /(?:^|[.\s_-])arte(?:$|[.\s_-])/i, brand: 'arte', category: 'Streaming' },
   { match: /zdf/i, brand: 'zdf', category: 'Streaming' },

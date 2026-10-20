@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="home_guard_description">Opens Luma instead of the Fire TV home screen when you press Home or leave an app.</string>
+</resources>
