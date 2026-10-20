@@ -123,7 +123,7 @@ GitHub Actions checks pull requests and pushes to `main`, runs the unit and brow
 
 For each release, update the version in both `package.json` and `appinfo.json`, then merge to `main`. Already-published versions are skipped. To retry a failed run, use **Actions → CI → Run workflow** on `main`.
 
-The stable feed URL always serves the latest release. Contributor checks, controls, weather behavior, and the code map are documented in [agents.md](agents.md).
+The stable feed URL always serves the latest release. Contributor checks, controls, weather behavior, and the code map are documented in [AGENTS.md](AGENTS.md).
 
 ## Credits
 
