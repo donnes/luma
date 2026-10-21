@@ -552,15 +552,16 @@ button svg {
 .brand-spotify {
   background: linear-gradient(140deg, #192d23, #101a16);
 }
-.wordmark-spotify {
-  font-size: 1.8rem;
-  font-weight: 650;
-  gap: 0.5rem;
-  color: #5ae08c;
+/* svgl.app logos: Spotify's green wordmark and Twitch's glyph on their dark brand surfaces. */
+.brand-logo-spotify {
+  width: 68%;
 }
-.wordmark-spotify svg {
-  width: 2.5rem;
-  height: 2.5rem;
+.brand-twitch {
+  background: linear-gradient(140deg, #26223a, #121116);
+}
+.brand-logo-twitch {
+  width: 34%;
+  height: 5.6rem;
 }
 .brand-jellyfin {
   background: linear-gradient(135deg, #25283f, #101422);
@@ -1541,14 +1542,6 @@ button svg {
     width: 1.8rem;
     height: 1.8rem;
   }
-  .wordmark-spotify {
-    font-size: 1.15rem;
-    gap: 0.3rem;
-  }
-  .wordmark-spotify svg {
-    width: 1.6rem;
-    height: 1.6rem;
-  }
   .wordmark-kodi {
     font-size: 2.2rem;
   }
@@ -1634,4 +1627,12 @@ button svg {
 }
 .app-face:has(.brand-installed)::after {
   background: none;
+}
+/* The Fire TV shell extends banners to the card's 4:3 shape; they fill it edge to edge. */
+.brand-banner img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }

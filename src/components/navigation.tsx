@@ -23,7 +23,10 @@ export const Navigation = memo(function Navigation({
   const positionIndicator = useCallback((animate: boolean) => {
     const selected = navigation.current?.querySelector<HTMLElement>('[aria-current="page"]');
     const pill = indicator.current;
-    if (!selected || !pill) return;
+    if (!pill) return;
+    // Pages outside the tabs, like Agents, leave every tab unselected.
+    pill.style.opacity = selected ? '' : '0';
+    if (!selected) return;
     // Measure only when selecting a tab or resizing. CSS owns every animation frame.
     pill.style.transition = animate ? '' : 'none';
     const left = selected.offsetLeft;

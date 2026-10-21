@@ -205,7 +205,7 @@ test('the packaged file app loads offline with CSP, local fonts, no module fetch
   await page.evaluate(() => document.fonts.ready);
   expect(await page.evaluate(() => document.fonts.check('16px "Luma Sans"'))).toBe(true);
   await page.getByRole('button', { name: 'Apps', exact: true }).click();
-  await expect(page.locator('.library-grid .brand-logo')).toHaveCount(9);
+  await expect(page.locator('.library-grid .brand-logo')).toHaveCount(10);
   await expect
     .poll(() =>
       page
@@ -523,7 +523,8 @@ test('compact library filters can reset, long names wrap, and inputs stay compac
   await page.getByRole('button', { name: 'Music', exact: true }).click();
   await expect(page.locator('.library-grid [data-app-id]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Music', exact: true }).click();
-  await expect(page.locator('.library-grid [data-app-id]')).toHaveCount(2);
+  // The TV's two apps plus Luma's own T3 Code app.
+  await expect(page.locator('.library-grid [data-app-id]')).toHaveCount(3);
   await page.getByRole('button', { name: 'Inputs', exact: true }).click();
   const input = await page.locator('.full-input-grid .input-card').first().boundingBox();
   expect(input!.height).toBeLessThan(140);
@@ -635,7 +636,8 @@ test('moving up to the Apps categories restores the complete top of the scroller
   await installMockTV(page, false, apps);
   await page.goto('/');
   await page.getByRole('button', { name: 'Apps', exact: true }).click();
-  await page.getByRole('button', { name: 'Open App 08', exact: true }).focus();
+  // Default favorites (App 01–05 and T3 Code) lead the library, so App 07 sits under App 02.
+  await page.getByRole('button', { name: 'Open App 07', exact: true }).focus();
   await page.locator('main').evaluate((main) => main.scrollTo({ top: 200, behavior: 'instant' }));
   await expect.poll(() => page.locator('main').evaluate((main) => main.scrollTop)).toBe(200);
   await page.keyboard.press('ArrowUp');
@@ -684,9 +686,9 @@ test('repeated remote moves reuse geometry instead of measuring the whole librar
   );
   await page.goto('/');
   await page.getByRole('button', { name: 'Apps', exact: true }).click();
-  await expect(page.locator('.library-grid [data-app-id]')).toHaveCount(120);
+  await expect(page.locator('.library-grid [data-app-id^="com.example"]')).toHaveCount(120);
   await page.evaluate(() => document.fonts.ready);
-  await page.locator('.library-grid [data-app-id]').first().focus();
+  await page.locator('.library-grid [data-app-id^="com.example"]').first().focus();
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowLeft');
   await page.evaluate(() => {
@@ -701,7 +703,7 @@ test('repeated remote moves reuse geometry instead of measuring the whole librar
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('ArrowLeft');
   }
-  await expect(page.locator('.library-grid [data-app-id]').first()).toBeFocused();
+  await expect(page.locator('.library-grid [data-app-id^="com.example"]').first()).toBeFocused();
   expect(await page.evaluate(() => (window as any).__layoutReads)).toBeLessThan(400);
 });
 
@@ -717,7 +719,7 @@ test('cached remote geometry follows disabled controls and resized grids', async
   );
   await page.goto('/');
   await page.getByRole('button', { name: 'Apps', exact: true }).click();
-  const cards = page.locator('.library-grid [data-app-id]');
+  const cards = page.locator('.library-grid [data-app-id^="com.example"]');
   await expect(cards).toHaveCount(36);
   await cards.first().focus();
   await page.keyboard.press('ArrowRight');
