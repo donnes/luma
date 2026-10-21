@@ -77,12 +77,21 @@ test('full-page settings support remote navigation, Back, and persistent prefere
     'setting-home-app-names',
     'setting-clock',
     'setting-motion',
-    'setting-refresh',
-    'setting-show-weather',
+    'setting-language',
   ]) {
     await page.keyboard.press('ArrowDown');
     await expect(page.locator(':focus')).toHaveAttribute('data-focusable', id);
   }
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('[data-focusable="language-option-en"]')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await page.locator('[data-focusable="setting-refresh"]').focus();
+  await page.keyboard.press('ArrowUp');
+  await expect(page.locator(':focus')).toHaveAttribute('data-focusable', 'setting-language');
+  await page.locator('[data-focusable="setting-refresh"]').focus();
+  await expect(page.locator(':focus')).toHaveAttribute('data-focusable', 'setting-refresh');
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator(':focus')).toHaveAttribute('data-focusable', 'setting-show-weather');
   await page.getByRole('button', { name: 'Summit', exact: true }).click();
   await page.getByRole('switch', { name: '24-hour clock', exact: false }).click();
   await page.getByRole('switch', { name: 'Reduced motion', exact: false }).click();
@@ -95,12 +104,17 @@ test('full-page settings support remote navigation, Back, and persistent prefere
   await expect(page.locator('.luma')).toHaveClass(/reduce-motion/);
 });
 
-test('display language can be selected, updates the UI, and persists', async ({ page }) => {
+test('display language menu supports vertical remote navigation and persists', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  const language = page.getByRole('combobox', { name: 'Display language' });
-  await expect(language).toHaveValue('en');
-  await language.selectOption('de');
+  const trigger = page.getByRole('button', { name: 'Display language: English' });
+  await expect(trigger).toBeVisible();
+  await trigger.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('[data-focusable="language-option-en"]')).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('[data-focusable="language-option-de"]')).toBeFocused();
+  await page.keyboard.press('Enter');
   await expect(page.locator('html')).toHaveAttribute('lang', 'de-DE');
   await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Luma-Einstellungen', exact: true })).toBeVisible();
@@ -108,10 +122,51 @@ test('display language can be selected, updates the UI, and persists', async ({ 
   await page.reload();
   await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
-  await page.getByRole('combobox', { name: 'Anzeigesprache' }).selectOption('zh');
+  await page.getByRole('button', { name: 'Anzeigesprache: Deutsch' }).focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('[data-focusable="language-option-de"]')).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
   await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
   await expect(page.getByRole('button', { name: '主页', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Luma 设置', exact: true })).toBeVisible();
+});
+
+test('Interface D-pad moves down to the language selector and up from refresh', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.locator('[data-focusable="setting-motion"]').focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(page.locator('[data-focusable="setting-language"]')).toBeFocused();
+  await page.locator('[data-focusable="setting-refresh"]').focus();
+  await page.keyboard.press('ArrowUp');
+  await expect(page.locator('[data-focusable="setting-language"]')).toBeFocused();
+});
+
+test('Settings panels fit within the content width at desktop and compact sizes', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  for (const width of [1920, 1280, 1024, 768]) {
+    await page.setViewportSize({ width, height: 900 });
+    const overflow = await page.evaluate(() => {
+      const main = document.querySelector('main')!;
+      const panels = [...document.querySelectorAll<HTMLElement>('.settings-layout > *')];
+      const mainBox = main.getBoundingClientRect();
+      return {
+        documentOverflow: document.documentElement.scrollWidth > window.innerWidth,
+        panelOutside: panels.some((panel) => {
+          const box = panel.getBoundingClientRect();
+          return box.left < mainBox.left || box.right > mainBox.right + 1;
+        }),
+      };
+    });
+    expect(overflow.documentOverflow).toBe(false);
+    expect(overflow.panelOutside).toBe(false);
+  }
 });
 
 test('search, category filtering, empty results and Back work', async ({ page }) => {

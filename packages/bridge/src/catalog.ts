@@ -1,7 +1,11 @@
 import type { TVApp, TVInput, Category } from './types';
 
 const identities: { match: RegExp; brand: string; category: Category }[] = [
-  { match: /(?:com\.webos\.app\.livetv|live[\s._-]*tv)/i, brand: 'live-tv', category: 'Streaming' },
+  {
+    match: /(?:com\.webos\.app\.livetv|live[\s._-]*tv|lg[\s._-]*channels?)/i,
+    brand: 'live-tv',
+    category: 'Streaming',
+  },
   { match: /netflix/i, brand: 'netflix', category: 'Streaming' },
   { match: /youtube/i, brand: 'youtube', category: 'Streaming' },
   { match: /disney/i, brand: 'disney', category: 'Streaming' },
@@ -44,12 +48,20 @@ export function normalizeApps(raw: unknown): TVApp[] {
   const seen = new Set<string>();
   return raw
     .flatMap((entry) => {
+      const rawTitle = typeof entry?.title === 'string' ? entry.title : '';
+      const title = rawTitle
+        // oxlint-disable-next-line eslint/no-control-regex -- Remove control characters from TV-supplied labels.
+        .replace(/[\u0000-\u001f\u007f]/g, '')
+        .trim()
+        .slice(0, 120);
+      const isLiveTV =
+        entry?.id === 'com.webos.app.livetv' ||
+        /live[\s._-]*tv|live television|lg[\s._-]*channels?/i.test(title);
       if (
         !entry ||
         !validAppId(entry.id) ||
         seen.has(entry.id) ||
-        entry.visible === false ||
-        entry.visible === 'false'
+        ((entry.visible === false || entry.visible === 'false') && !isLiveTV)
       )
         return [];
       // Internal services, input stubs and Luma itself aren't applications to put in the library.
@@ -62,19 +74,11 @@ export function normalizeApps(raw: unknown): TVApp[] {
         return [];
       if (
         entry.visible !== true &&
-        entry.id !== 'com.webos.app.livetv' &&
+        !isLiveTV &&
         /^(com\.webos\.|com\.palm\.|com\.lge\.)/.test(entry.id)
       )
         return [];
       seen.add(entry.id);
-      const title =
-        typeof entry.title === 'string'
-          ? entry.title
-              // oxlint-disable-next-line eslint/no-control-regex -- Remove control characters from TV-supplied labels.
-              .replace(/[\u0000-\u001f\u007f]/g, '')
-              .trim()
-              .slice(0, 120)
-          : entry.id;
       return [appIdentity(entry.id, title || entry.id)];
     })
     .sort((a, b) => a.title.localeCompare(b.title));
@@ -132,7 +136,7 @@ export function sortApps(apps: TVApp[], favorites: readonly string[]): TVApp[] {
 }
 
 export function defaultFavorites(apps: TVApp[]): string[] {
-  const brands = ['netflix', 'youtube', 'apple', 'disney', 'prime', 'plex'];
+  const brands = ['netflix', 'youtube', 'apple', 'disney', 'prime', 'live-tv', 'plex'];
   const preferred = brands.flatMap((brand) => apps.find((app) => app.brand === brand)?.id ?? []);
   return [...new Set([...preferred, ...apps.map((app) => app.id)])].slice(0, 6);
 }
