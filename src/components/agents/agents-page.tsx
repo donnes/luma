@@ -19,6 +19,7 @@ import {
   type ThreadDetail,
 } from '../../agents/model';
 import { useAgents } from '../../agents/use-agents';
+import { canOpenT3Code, openT3Code, threadPath } from '../../agents/web-client';
 import type { ApprovalDecision, ThreadShell } from '../../agents/types';
 import { useTranslation } from '../../i18n';
 import { Conversation } from './conversation';
@@ -104,6 +105,15 @@ export function AgentsPage({ conversation, onConversation, backRef, onPaired, no
   const detail =
     state.detail?.threadId === focusedThread && state.detail.ready ? state.detail : null;
 
+  // Where the shell can host it, the full T3 Code app shows a thread's
+  // conversation; elsewhere Luma's own conversation view does.
+  const openT3 = (path?: string) =>
+    void openT3Code(path).catch(() => notify(t('agentsWebFailed'), true));
+  const openThread = (threadId: string) =>
+    canOpenT3Code() && state.pairing
+      ? openT3(threadPath(state.pairing.environmentId, threadId))
+      : onConversation(threadId);
+
   if (!state.pairing || state.status === 'expired') return <PairingBox onPaired={onPaired} />;
   if (!state.shell.ready)
     return state.status === 'offline' ? (
@@ -143,7 +153,12 @@ export function AgentsPage({ conversation, onConversation, backRef, onPaired, no
 
   if (!current)
     return (
-      <AgentsMessage icon={<Check />} title={t('agentsQuietTitle')} body={t('agentsQuietBody')} />
+      <AgentsMessage
+        icon={<Check />}
+        title={t('agentsQuietTitle')}
+        body={t('agentsQuietBody')}
+        {...(canOpenT3Code() ? { action: t('agentsOpenT3'), onAction: () => openT3() } : {})}
+      />
     );
 
   return (
@@ -152,7 +167,7 @@ export function AgentsPage({ conversation, onConversation, backRef, onPaired, no
         key={current.thread.id}
         agent={current}
         detail={detail}
-        onOpen={() => onConversation(current.thread.id)}
+        onOpen={() => openThread(current.thread.id)}
         onReply={() => setReplyTo(current.thread)}
         notify={notify}
         onResolved={() => {
@@ -179,7 +194,7 @@ export function AgentsPage({ conversation, onConversation, backRef, onPaired, no
               agent={agent}
               selected={agent.thread.id === current.thread.id}
               onFocus={() => setSelected(agent.thread.id)}
-              onOpen={() => onConversation(agent.thread.id)}
+              onOpen={() => openThread(agent.thread.id)}
             />
           ))}
         </div>

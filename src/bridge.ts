@@ -1,1 +1,9 @@
-export { isTV, nativeCall, loadInventory, launchApp, platformBack } from '@luma/bridge';
+export {
+  isTV,
+  nativeCall,
+  loadInventory,
+  launchApp,
+  platformBack,
+  canOpenWebApp,
+  openWebApp,
+} from '@luma/bridge';

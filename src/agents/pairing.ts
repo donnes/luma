@@ -107,6 +107,25 @@ export async function websocketTicket(route: Route, token: string): Promise<stri
   return body.ticket;
 }
 
+/** Issues a fresh one-time pairing code, so another client can pair without the user. */
+export async function pairingCode(route: Route, token: string, label: string): Promise<string> {
+  let response: Response;
+  try {
+    response = await fetch(`${route.url}api/auth/pairing-token`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ label }),
+    });
+  } catch {
+    throw new PairingError('unreachable');
+  }
+  if (response.status === 401) throw new PairingError('expired');
+  if (!response.ok) throw new PairingError('rejected');
+  const body = await response.json();
+  if (typeof body?.credential !== 'string') throw new PairingError('rejected');
+  return body.credential;
+}
+
 export function socketUrl(route: Route, ticket: string): string {
   const url = new URL('ws', route.url);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';

@@ -2,6 +2,7 @@ package app.luma.firetv;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
@@ -45,6 +46,8 @@ public class MainActivity extends Activity {
   /** Installed apps' banners and icons, drawn by the shell on request. */
   private static final String ART_PREFIX = "/app-art/";
   private static final String TAG = "luma";
+  /** Sent by {@link WebAppActivity} when T3 Code's web app needs a new pairing code. */
+  static final String ACTION_REPAIR_WEB_APP = "app.luma.firetv.REPAIR_WEB_APP";
 
   /** Long enough for the resumed window's first frame to reach the screen. */
   private static final long UNCOVER_DELAY_MS = 150;
@@ -57,7 +60,7 @@ public class MainActivity extends Activity {
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     getWindow().setBackgroundDrawable(new ColorDrawable(Color.BLACK));
-    enterImmersive();
+    enterImmersive(this);
 
     webView = createWebView();
     FrameLayout layout = new FrameLayout(this);
@@ -68,6 +71,14 @@ public class MainActivity extends Activity {
     setContentView(layout);
 
     webView.loadUrl(BASE_URL + "index.html");
+  }
+
+  @Override
+  protected void onNewIntent(Intent intent) {
+    super.onNewIntent(intent);
+    if (ACTION_REPAIR_WEB_APP.equals(intent.getAction())) {
+      webView.evaluateJavascript("window.dispatchEvent(new Event('luma:t3-repair'))", null);
+    }
   }
 
   @Override
@@ -82,7 +93,7 @@ public class MainActivity extends Activity {
   protected void onResume() {
     super.onResume();
     webView.onResume();
-    enterImmersive();
+    enterImmersive(this);
     // HomeGuard may be covering Amazon's home; let it drop the cover once the
     // real window has drawn underneath.
     webView.postDelayed(reportShown, UNCOVER_DELAY_MS);
@@ -114,8 +125,8 @@ public class MainActivity extends Activity {
     webView.evaluateJavascript(escape, null);
   }
 
-  private void enterImmersive() {
-    View decor = getWindow().getDecorView();
+  static void enterImmersive(Activity activity) {
+    View decor = activity.getWindow().getDecorView();
     decor.setSystemUiVisibility(
         View.SYSTEM_UI_FLAG_LAYOUT_STABLE
             | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
@@ -123,7 +134,7 @@ public class MainActivity extends Activity {
             | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
             | View.SYSTEM_UI_FLAG_FULLSCREEN
             | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
-    decor.setOnSystemUiVisibilityChangeListener(visibility -> enterImmersive());
+    decor.setOnSystemUiVisibilityChangeListener(visibility -> enterImmersive(activity));
   }
 
   @SuppressLint("SetJavaScriptEnabled")

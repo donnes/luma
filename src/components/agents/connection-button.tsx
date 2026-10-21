@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Globe, LoaderCircle, ShieldCheck, Wifi, WifiOff } from 'lucide-react';
+import { Globe, Link2, Link2Off, LoaderCircle, ShieldCheck } from 'lucide-react';
 import { useAgents } from '../../agents/use-agents';
 import { useTranslation } from '../../i18n';
 import { ConnectionDialog } from './connection-dialog';
@@ -32,7 +32,7 @@ export function ConnectionButton() {
     : t(state.status === 'offline' ? 'agentsOffline' : 'agentsReconnecting');
   const icon = !connected ? (
     state.status === 'offline' ? (
-      <WifiOff strokeWidth={1.8} />
+      <Link2Off strokeWidth={1.8} />
     ) : (
       <LoaderCircle className="spin" strokeWidth={1.8} />
     )
@@ -41,7 +41,7 @@ export function ConnectionButton() {
   ) : kind === 'public' ? (
     <Globe strokeWidth={1.8} />
   ) : (
-    <Wifi strokeWidth={1.8} />
+    <Link2 strokeWidth={1.8} />
   );
   return (
     <>

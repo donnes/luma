@@ -38,6 +38,12 @@
         <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
       </intent-filter>
     </activity>
+    <!-- POC: T3 Code's own web client, opened from the T3 Code tile. -->
+    <activity
+        android:name="app.luma.firetv.WebAppActivity"
+        android:exported="false"
+        android:screenOrientation="landscape"
+        android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode" />
     <!-- Returns to Luma whenever Fire OS shows Amazon's home screen. Its own
          process survives the low-memory killer taking down the WebView. -->
     <service

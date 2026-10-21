@@ -121,6 +121,10 @@ for (const dir of [
 }
 
 fs.cpSync(app, path.join(build, 'assets', 'app'), { recursive: true });
+// Shell-owned assets, such as the T3 Code web client's TV injection.
+fs.cpSync(path.join(root, 'platforms/firetv/android/assets'), path.join(build, 'assets'), {
+  recursive: true,
+});
 // Static resources (accessibility config, strings) sit beside the generated art.
 fs.cpSync(path.join(root, 'platforms/firetv/android/res'), path.join(build, 'gen', 'res'), {
   recursive: true,
