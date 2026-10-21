@@ -67,7 +67,11 @@ function Launcher({
 }) {
   const { t, language } = useTranslation();
   const [page, setPage] = useState<Page>('home');
-  const [inventory, setInventory] = useState<Inventory>({ apps: [], inputs: [], warnings: [] });
+  const [inventory, setInventory] = useState<Inventory>({
+    apps: [],
+    inputs: [],
+    warnings: [],
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [optionsApp, setOptionsApp] = useState<TVApp | null>(null);
@@ -379,7 +383,15 @@ function Launcher({
         }
         return;
       }
+      const languageOption = (event.target as HTMLElement | null)?.dataset.focusable?.startsWith(
+        'language-option-',
+      );
       if (editable && event.key !== 'ArrowDown') return;
+      if (languageOption && event.key.startsWith('Arrow')) {
+        event.preventDefault();
+        moveFocus(directions[event.key]);
+        return;
+      }
       if (directions[event.key]) {
         event.preventDefault();
         moveFocus(directions[event.key]);
@@ -473,7 +485,15 @@ function Launcher({
         <div className="shell">
           <header
             className="header"
-            data-focus-down={page === 'settings' ? 'setting-home-app-names' : undefined}
+            data-focus-down={
+              page === 'settings'
+                ? document.activeElement
+                    ?.getAttribute('data-focusable')
+                    ?.startsWith('language-option-')
+                  ? undefined
+                  : 'setting-home-app-names'
+                : undefined
+            }
           >
             <Clock clock24={preferences.clock24} language={language} />
             <Navigation page={page} onChange={openPage} />
@@ -820,8 +840,8 @@ function Launcher({
             ) : null}
             <div className="footer-right">
               {page === 'settings' ? (
-                <span className="settings-version" aria-label="Luma version 1.0.2">
-                  v1.0.2
+                <span className="settings-version" aria-label="Luma version 1.0.3">
+                  v1.0.3
                 </span>
               ) : (
                 <button
