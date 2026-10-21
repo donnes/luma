@@ -2,6 +2,7 @@ import { AppWindow, Coffee, Gamepad2, Globe, MonitorPlay, Settings2, Tv } from '
 import type { TVApp } from '../types';
 import appIcons from '../app-icons.json';
 import { useTranslation } from '../i18n';
+import { AgentsMark } from './agents/agents-mark';
 
 const logos: Record<string, string> = {
   apple: 'apple-tv',
@@ -13,6 +14,8 @@ const logos: Record<string, string> = {
   arte: 'arte',
   zdf: 'zdf',
   'das-erste': 'das-erste',
+  spotify: 'spotify',
+  twitch: 'twitch',
 };
 
 export function Brand({ app }: { app: TVApp }) {
@@ -27,7 +30,27 @@ export function Brand({ app }: { app: TVApp }) {
         draggable={false}
       />
     );
-  const installedIcon = (appIcons as Record<string, string>)[app.id];
+  // Installed artwork: icons collected from the webOS TV, or the banner/icon
+  // the Fire TV shell draws for any installed app.
+  const art = app.art ? `./app-art/${encodeURIComponent(app.id)}.png` : undefined;
+  if (app.art === 'banner')
+    return (
+      <span className="brand-installed brand-banner">
+        <img
+          src={art}
+          alt=""
+          draggable={false}
+          decoding="async"
+          onError={(event) => {
+            event.currentTarget.style.display = 'none';
+            const label = event.currentTarget.nextElementSibling as HTMLElement | null;
+            if (label) label.hidden = false;
+          }}
+        />
+        <span hidden>{app.title}</span>
+      </span>
+    );
+  const installedIcon = (appIcons as Record<string, string>)[app.id] ?? art;
   if (installedIcon)
     return (
       <span className="brand-installed">
@@ -46,6 +69,8 @@ export function Brand({ app }: { app: TVApp }) {
       </span>
     );
   switch (app.brand) {
+    case 'agents':
+      return <AgentsMark />;
     case 'live-tv':
       return (
         <span className="brand-symbol">
@@ -57,20 +82,6 @@ export function Brand({ app }: { app: TVApp }) {
       return (
         <span className="wordmark wordmark-plex">
           ple<span className="plex-x">x</span>
-        </span>
-      );
-    case 'spotify':
-      return (
-        <span className="wordmark wordmark-spotify">
-          <svg viewBox="0 0 48 48" aria-hidden="true">
-            <circle cx="24" cy="24" r="24" fill="currentColor" />
-            <g fill="none" stroke="#15271c" strokeLinecap="round">
-              <path d="M11 18q15-6 27 2" strokeWidth="4" />
-              <path d="M13 25q13-5 23 2" strokeWidth="3.5" />
-              <path d="M15 32q10-4 18 1" strokeWidth="3" />
-            </g>
-          </svg>
-          Spotify
         </span>
       );
     case 'homebrew':

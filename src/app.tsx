@@ -29,8 +29,20 @@ import { wallpapers } from './wallpapers';
 import { moveFavorite } from './favorites';
 import type { Category, Inventory, Page, Preferences, TVApp, TVInput } from './types';
 import { categoryLabel, LanguageProvider, useTranslation } from './i18n';
+import { AgentsPage } from './components/agents/agents-page';
+import { AgentsSummary } from './components/agents/agents-summary';
+import { ConnectionButton } from './components/agents/connection-button';
+import { AGENTS_APP_ID, useAgentsLifecycle } from './agents/use-agents';
 
 const categories: Category[] = ['Streaming', 'Music', 'Gaming', 'Utilities'];
+// Home starts with the TV's best-known apps and T3 Code in the last slot;
+// pairing moves T3 Code to the front.
+const homeDefaults = (apps: TVApp[]) => [
+  ...defaultFavorites(apps)
+    .filter((id) => id !== AGENTS_APP_ID)
+    .slice(0, 5),
+  AGENTS_APP_ID,
+];
 const focusFirstApp = () =>
   (
     document.querySelector<HTMLElement>('main [data-app-id]') ??
@@ -73,12 +85,22 @@ function Launcher({
   const lastReordering = useRef<string | null>(null);
   const refreshing = useRef(false);
   const reducedMotion = preferences.reducedMotion;
-  const appMap = useMemo(
-    () => new Map(inventory.apps.map((app) => [app.id, app])),
+  const [conversation, setConversation] = useState<string | null>(null);
+  const agentsBack = useRef<(() => boolean) | null>(null);
+  useAgentsLifecycle();
+  // Luma's own T3 Code app sits in the library like an installed one; it
+  // opens to pairing until it's connected.
+  const apps = useMemo(
+    () => [
+      { id: AGENTS_APP_ID, title: 'T3 Code', category: 'Utilities' as const, brand: 'agents' },
+      ...inventory.apps,
+    ],
     [inventory.apps],
   );
+  const appMap = useMemo(() => new Map(apps.map((app) => [app.id, app])), [apps]);
   const favoriteIds = useMemo(
-    () => preferences.favorites ?? defaultFavorites(inventory.apps),
+    // Defaults come from the TV's own apps; T3 Code is pinned when it's paired.
+    () => preferences.favorites ?? homeDefaults(inventory.apps),
     [preferences.favorites, inventory.apps],
   );
   const hiddenIds = useMemo(() => new Set(preferences.hidden), [preferences.hidden]);
@@ -91,14 +113,14 @@ function Launcher({
     [favoriteIds, appMap, hiddenIds],
   );
   const hiddenCount = useMemo(
-    () => inventory.apps.filter((app) => hiddenIds.has(app.id)).length,
-    [inventory.apps, hiddenIds],
+    () => apps.filter((app) => hiddenIds.has(app.id)).length,
+    [apps, hiddenIds],
   );
   const filteredApps = useMemo(() => {
     if (page !== 'apps') return [];
     const search = query.toLocaleLowerCase();
     return sortApps(
-      inventory.apps.filter(
+      apps.filter(
         (app) =>
           hiddenIds.has(app.id) === showHidden &&
           (!category || app.category === category) &&
@@ -106,7 +128,7 @@ function Launcher({
       ),
       favoriteIds,
     );
-  }, [page, inventory.apps, hiddenIds, showHidden, category, query, favoriteIds]);
+  }, [page, apps, hiddenIds, showHidden, category, query, favoriteIds]);
 
   const notify = useCallback((text: string, isError = false) => {
     clearTimeout(toastTimer.current);
@@ -189,6 +211,7 @@ function Launcher({
 
   const openPage = useCallback((next: Page) => {
     setReordering(null);
+    setConversation(null);
     setPage(next);
     setQuery('');
     setCategory(null);
@@ -199,6 +222,10 @@ function Launcher({
   const onLaunch = useCallback(
     async (app: TVApp | TVInput) => {
       if (pendingLaunch.current || reordering) return;
+      if (app.id === AGENTS_APP_ID) {
+        openPage('agents');
+        return;
+      }
       if (!isTV()) {
         notify(t('desktopPreview', { app: app.title }));
         return;
@@ -219,7 +246,7 @@ function Launcher({
         setLaunching(null);
       }
     },
-    [notify, reordering, setPreferences, t],
+    [notify, openPage, reordering, setPreferences, t],
   );
 
   const onOptions = useCallback(
@@ -232,15 +259,15 @@ function Launcher({
   const shiftFavorite = useCallback(
     (id: string, direction: -1 | 1) => {
       setPreferences((current) => {
-        const ids = current.favorites ?? defaultFavorites(inventory.apps);
+        const ids = current.favorites ?? homeDefaults(inventory.apps);
         const visible = new Set(
-          inventory.apps.filter((app) => !current.hidden.includes(app.id)).map((app) => app.id),
+          apps.filter((app) => !current.hidden.includes(app.id)).map((app) => app.id),
         );
         const next = moveFavorite(ids, id, direction, visible);
         return next === ids ? current : { ...current, favorites: next };
       });
     },
-    [inventory.apps, setPreferences],
+    [apps, inventory.apps, setPreferences],
   );
 
   const actions = useRef<{
@@ -275,6 +302,7 @@ function Launcher({
           setQuery('');
           return;
         }
+        if (agentsBack.current?.()) return;
         if (page !== 'home') {
           openPage('home');
           requestAnimationFrame(focusFirstApp);
@@ -416,7 +444,9 @@ function Launcher({
   const wallpaper = wallpapers.find((item) => item.id === preferences.wallpaper) ?? wallpapers[0];
 
   return (
-    <div className={`luma${reducedMotion ? ' reduce-motion' : ''}${ambient ? ' is-ambient' : ''}`}>
+    <div
+      className={`luma${reducedMotion ? ' reduce-motion' : ''}${ambient ? ' is-ambient' : ''}${page === 'agents' && !ambient ? ' on-agents' : ''}`}
+    >
       <div className="landscape-fallback" />
       <div
         className={`wallpaper wallpaper-${preferences.wallpaper}`}
@@ -448,6 +478,7 @@ function Launcher({
             <Clock clock24={preferences.clock24} language={language} />
             <Navigation page={page} onChange={openPage} />
             <div className="header-right">
+              {page === 'agents' ? <ConnectionButton /> : null}
               <button
                 className="icon-button settings-button"
                 data-focusable="tv-settings"
@@ -488,6 +519,7 @@ function Launcher({
                         }}
                       />
                     ) : null}
+                    <AgentsSummary onOpen={() => openPage('agents')} />
                   </div>
                 </section>
                 <section className="favorites-section" aria-labelledby="favorites-heading">
@@ -690,6 +722,28 @@ function Launcher({
                 )}
               </>
             ) : null}
+            {page === 'agents' ? (
+              <AgentsPage
+                conversation={conversation}
+                onConversation={setConversation}
+                backRef={agentsBack}
+                notify={notify}
+                onPaired={() => {
+                  // Pin the app first so it's waiting on Home.
+                  setPreferences((current) => {
+                    const ids = current.favorites ?? homeDefaults(inventory.apps);
+                    const favorites = [AGENTS_APP_ID, ...ids.filter((id) => id !== AGENTS_APP_ID)];
+                    return {
+                      ...current,
+                      // Untouched defaults stay one row; chosen favorites are all kept.
+                      favorites: current.favorites ? favorites : favorites.slice(0, 6),
+                      hidden: current.hidden.filter((id) => id !== AGENTS_APP_ID),
+                    };
+                  });
+                  notify(t('agentsPaired'));
+                }}
+              />
+            ) : null}
             {page === 'settings' ? (
               <Settings
                 preferences={preferences}
@@ -713,7 +767,24 @@ function Launcher({
           <footer className="footer">
             {reordering || page !== 'home' ? (
               <div className="remote-hints" id={reordering ? 'reorder-instructions' : undefined}>
-                {reordering ? (
+                {page === 'agents' && !reordering ? (
+                  <>
+                    <span>
+                      <span className="keycap keycap-ok">OK</span>
+                      {t('select')}
+                    </span>
+                    {conversation ? (
+                      <span>
+                        <span className="keycap">▲ ▼</span>
+                        {t('agentScroll')}
+                      </span>
+                    ) : null}
+                    <span>
+                      <span className="keycap">Back</span>
+                      {conversation ? t('agents') : t('homeLabel')}
+                    </span>
+                  </>
+                ) : reordering ? (
                   <>
                     <span>
                       <span className="keycap">← →</span>

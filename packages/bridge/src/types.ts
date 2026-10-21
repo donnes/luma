@@ -1,4 +1,4 @@
-export type Page = 'home' | 'apps' | 'inputs' | 'settings';
+export type Page = 'home' | 'apps' | 'inputs' | 'settings' | 'agents';
 export type Wallpaper =
   | 'dunes'
   | 'san-francisco'
@@ -18,6 +18,8 @@ export interface TVApp {
   title: string;
   category: Category;
   brand: string;
+  /** Art the platform can draw for this app at `./app-art/<id>.png` (Fire TV shell). */
+  art?: 'banner' | 'icon';
 }
 
 export interface TVInput {

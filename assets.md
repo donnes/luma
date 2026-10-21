@@ -17,7 +17,7 @@ Luma's logo is a folded-light **L**: an icy-blue ribbon turns into a cyan-and-in
 
 ## Brand SVGs
 
-The requested app logos use downloaded vector artwork, rather than font approximations. SVG outlines are preserved; Apple TV, Disney+, Prime Video, and Das Erste use a white monochrome display treatment for contrast. YouTube's wordmark is recolored white for its dark card, while its play icon stays red. All files are bundled locally under `public/logos/`.
+The requested app logos use downloaded vector artwork, rather than font approximations. SVG outlines are preserved; Apple TV, Disney+, Prime Video, and Das Erste use a white monochrome display treatment for contrast. YouTube's wordmark is recolored white for its dark card, while its play icon stays red. All files are bundled locally under `public/logos/`. On Fire TV, apps without a bundled logo use the TV banner or icon the app itself ships, drawn by the shell at runtime; nothing is bundled for them.
 
 | Asset             | Source                                                                                                                          | Source license / attribution                                                                                                        |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
@@ -30,6 +30,10 @@ The requested app logos use downloaded vector artwork, rather than font approxim
 | `arte.svg`        | [ARTE 2026 logo](https://commons.wikimedia.org/wiki/File:Arte_Logo_2026.svg)                                                    | ARTE; public-domain logo artwork                                                                                                    |
 | `zdf.svg`         | [ZDF logo](https://commons.wikimedia.org/wiki/File:ZDF_logo.svg)                                                                | ZDF; public-domain logo artwork                                                                                                     |
 | `das-erste.svg`   | [Das Erste 2014](https://commons.wikimedia.org/wiki/File:Das_Erste_2014.svg)                                                    | ARD; public-domain logo artwork                                                                                                     |
+| `spotify.svg`     | [svgl.app: Spotify wordmark](https://svgl.app/library/spotify_wordmark.svg)                                                     | Spotify AB; trademark of its owner, distributed by svgl                                                                             |
+| `twitch.svg`      | [svgl.app: Twitch](https://svgl.app/library/twitch.svg)                                                                         | Twitch Interactive, Inc.; trademark of its owner, distributed by svgl                                                               |
+
+The T3 Code mark on the Agents tile is the path from T3 Code's `assets/prod/logo.svg` ([pingdotgg/t3code](https://github.com/pingdotgg/t3code), MIT). It identifies the T3 Code server Luma pairs with; Luma is not affiliated with T3 Tools.
 
 The PlayStation and Apple TV input symbols use the SVG paths supplied by the user. PlayStation is a Sony Interactive Entertainment mark; Apple TV is an Apple mark. HDMI, USB, and generic device symbols are Lucide icons.
 

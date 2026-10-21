@@ -42,12 +42,15 @@ public class MainActivity extends Activity {
   private static final String HOST = "luma.local";
   private static final String BASE_URL = "https://" + HOST + "/";
   private static final String ASSET_ROOT = "app/";
+  /** Installed apps' banners and icons, drawn by the shell on request. */
+  private static final String ART_PREFIX = "/app-art/";
   private static final String TAG = "luma";
 
   /** Long enough for the resumed window's first frame to reach the screen. */
   private static final long UNCOVER_DELAY_MS = 150;
 
   private WebView webView;
+  private final Shell shell = new Shell(this);
   private final Runnable reportShown = () -> HomeGuard.report(this, true);
 
   @Override
@@ -145,6 +148,9 @@ public class MainActivity extends Activity {
     settings.setUseWideViewPort(true);
     settings.setLoadWithOverviewMode(true);
     settings.setMediaPlaybackRequiresUserGesture(false);
+    // The app is served from https://luma.local/, but T3 Code servers on the
+    // LAN and Tailscale speak plain http:// and ws://.
+    settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
     view.setWebViewClient(new AssetWebViewClient());
     view.setWebChromeClient(
         new WebChromeClient() {
@@ -162,7 +168,7 @@ public class MainActivity extends Activity {
             return true;
           }
         });
-    view.addJavascriptInterface(new Shell(this), "LumaAndroid");
+    view.addJavascriptInterface(shell, "LumaAndroid");
     return view;
   }
 
@@ -175,6 +181,12 @@ public class MainActivity extends Activity {
         return null;
       }
       String path = url.getPath();
+      if (path != null && path.startsWith(ART_PREFIX) && path.endsWith(".png")) {
+        byte[] png = shell.art(path.substring(ART_PREFIX.length(), path.length() - 4));
+        return png == null
+            ? notFound()
+            : new WebResourceResponse("image/png", null, new ByteArrayInputStream(png));
+      }
       String relative =
           path == null || path.isEmpty() || "/".equals(path) ? "index.html" : path.substring(1);
       String asset = ASSET_ROOT + relative;

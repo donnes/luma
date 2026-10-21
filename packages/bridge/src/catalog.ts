@@ -4,6 +4,8 @@ const identities: { match: RegExp; brand: string; category: Category }[] = [
   { match: /(?:com\.webos\.app\.livetv|live[\s._-]*tv)/i, brand: 'live-tv', category: 'Streaming' },
   { match: /netflix/i, brand: 'netflix', category: 'Streaming' },
   { match: /youtube/i, brand: 'youtube', category: 'Streaming' },
+  // Star+ is a Disney package too, but not Disney+.
+  { match: /starplus|star\+/i, brand: 'star', category: 'Streaming' },
   { match: /disney/i, brand: 'disney', category: 'Streaming' },
   { match: /apple.?tv|appletv/i, brand: 'apple', category: 'Streaming' },
   // webOS ships Prime Video as the bare id `amazon`; Fire OS names every
@@ -20,6 +22,7 @@ const identities: { match: RegExp; brand: string; category: Category }[] = [
   { match: /plex/i, brand: 'plex', category: 'Streaming' },
   { match: /kodi/i, brand: 'kodi', category: 'Streaming' },
   { match: /spotify/i, brand: 'spotify', category: 'Music' },
+  { match: /twitch/i, brand: 'twitch', category: 'Streaming' },
   { match: /moonlight|limelight/i, brand: 'moonlight', category: 'Gaming' },
   { match: /retroarch|game|steam/i, brand: 'gaming', category: 'Gaming' },
   { match: /hbchannel|homebrew/i, brand: 'homebrew', category: 'Utilities' },
@@ -75,7 +78,8 @@ export function normalizeApps(raw: unknown): TVApp[] {
               .trim()
               .slice(0, 120)
           : entry.id;
-      return [appIdentity(entry.id, title || entry.id)];
+      const app = appIdentity(entry.id, title || entry.id);
+      return [entry.art === 'banner' || entry.art === 'icon' ? { ...app, art: entry.art } : app];
     })
     .sort((a, b) => a.title.localeCompare(b.title));
 }

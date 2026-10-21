@@ -16,12 +16,14 @@
   <uses-feature android:name="android.software.leanback" android:required="false" />
   <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
+  <!-- Cleartext is for T3 Code servers on the LAN and Tailscale, which serve plain HTTP. -->
   <application
       android:label="Luma"
       android:icon="@drawable/ic_launcher"
       android:banner="@drawable/ic_banner"
       android:allowBackup="false"
       android:hardwareAccelerated="true"
+      android:usesCleartextTraffic="true"
       android:theme="@android:style/Theme.Material.NoActionBar">
     <activity
         android:name="app.luma.firetv.MainActivity"

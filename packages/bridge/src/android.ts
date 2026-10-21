@@ -20,12 +20,30 @@ export const isTV = (): boolean => {
   return !!host && host.isTV() === true;
 };
 
+// Fire OS lists its own tools and Amazon storefronts (News, Silk, miniTV,
+// Appstore, Downloads, the screensaver…) as launchable apps. The library keeps
+// the streaming apps: every third-party app plus Amazon's Prime Video and YouTube.
+const amazonStreaming = new Set([
+  'com.amazon.firebat',
+  'com.amazon.avod',
+  'com.amazon.firetv.youtube',
+]);
+
+export function streamingApps(raw: unknown[]): unknown[] {
+  return raw.filter((entry) => {
+    if (typeof entry !== 'object' || entry === null || !('id' in entry)) return false;
+    const { id } = entry;
+    if (typeof id !== 'string') return false;
+    return amazonStreaming.has(id) || !/^(com\.amazon\.|amazon\.|com\.android\.)/.test(id);
+  });
+}
+
 export async function loadInventory(): Promise<Inventory> {
   const host = shell();
   if (!host) throw new Error('The Android TV shell is unavailable.');
   const raw = JSON.parse(host.listApps());
   return {
-    apps: normalizeApps(Array.isArray(raw?.apps) ? raw.apps : []),
+    apps: normalizeApps(streamingApps(Array.isArray(raw?.apps) ? raw.apps : [])),
     inputs: [],
     warnings: [
       'HDMI inputs are not available on a streaming stick. Launch apps with the stick’s own home screen for inputs.',

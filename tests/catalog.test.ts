@@ -8,6 +8,7 @@ import {
   sortApps,
 } from '../src/catalog.ts';
 import { parsePreferences } from '../src/storage.ts';
+import { streamingApps } from '../packages/bridge/src/android.ts';
 import { nextFocus, type FocusRect } from '../src/navigation.ts';
 
 test('inventory excludes internal/invisible apps and de-duplicates third-party apps', () => {
@@ -35,6 +36,19 @@ test('inventory excludes internal/invisible apps and de-duplicates third-party a
     'com.webos.app.livetv',
     'com.example.sideload',
   ]);
+});
+
+test('only the art kinds the Fire TV shell can draw reach the tiles', () => {
+  const apps = normalizeApps([
+    { id: 'com.crunchyroll.crunchyroid', title: 'Crunchyroll', art: 'banner' },
+    { id: 'com.amazon.venezia', title: 'Appstore', art: 'icon' },
+    { id: 'com.example.odd', title: 'Odd', art: '../../etc/passwd' },
+  ]);
+  assert.deepEqual(Object.fromEntries(apps.map((app) => [app.id, app.art])), {
+    'com.amazon.venezia': 'icon',
+    'com.crunchyroll.crunchyroid': 'banner',
+    'com.example.odd': undefined,
+  });
 });
 
 test('Live TV is recognized when webOS exposes its system app', () => {
@@ -140,4 +154,24 @@ test('favorites sort first in saved order, with remaining apps alphabetical and 
     sortApps(apps, []).map((app) => app.title),
     ['Alpha', 'Beta', 'Charlie', 'Zulu'],
   );
+});
+
+test('Fire TV keeps streaming apps and drops Fire OS tools and Amazon storefronts', () => {
+  const ids = streamingApps([
+    { id: 'com.amazon.firebat' },
+    { id: 'com.amazon.firetv.youtube' },
+    { id: 'com.amazon.cloud9' },
+    { id: 'com.amazon.minitv.android.app' },
+    { id: 'com.android.providers.downloads.ui' },
+    { id: 'com.netflix.ninja' },
+    { id: 'com.formulaone.production' },
+    { id: 'com.olympiatv' },
+  ]).map((entry) => (entry as { id: string }).id);
+  assert.deepEqual(ids, [
+    'com.amazon.firebat',
+    'com.amazon.firetv.youtube',
+    'com.netflix.ninja',
+    'com.formulaone.production',
+    'com.olympiatv',
+  ]);
 });
