@@ -32,7 +32,9 @@ import { categoryLabel, LanguageProvider, useTranslation } from './i18n';
 import { AgentsPage } from './components/agents/agents-page';
 import { AgentsSummary } from './components/agents/agents-summary';
 import { ConnectionButton } from './components/agents/connection-button';
+import { OpenT3Button } from './components/agents/open-t3-button';
 import { AGENTS_APP_ID, useAgentsLifecycle } from './agents/use-agents';
+import { repairT3Code } from './agents/web-client';
 
 const categories: Category[] = ['Streaming', 'Music', 'Gaming', 'Utilities'];
 // Home starts with the TV's best-known apps and T3 Code in the last slot;
@@ -222,6 +224,12 @@ function Launcher({
     setShowHidden(false);
     document.querySelector('main')?.scrollTo({ top: 0 });
   }, []);
+  useEffect(() => {
+    // T3 Code's web app lost its session (or never got one): pair it again.
+    const repair = () => void repairT3Code().catch(() => notify(t('agentsWebFailed'), true));
+    window.addEventListener('luma:t3-repair', repair);
+    return () => window.removeEventListener('luma:t3-repair', repair);
+  }, [notify, t]);
 
   const onLaunch = useCallback(
     async (app: TVApp | TVInput) => {
@@ -498,7 +506,12 @@ function Launcher({
             <Clock clock24={preferences.clock24} language={language} />
             <Navigation page={page} onChange={openPage} />
             <div className="header-right">
-              {page === 'agents' ? <ConnectionButton /> : null}
+              {page === 'agents' ? (
+                <>
+                  <OpenT3Button notify={notify} />
+                  <ConnectionButton />
+                </>
+              ) : null}
               <button
                 className="icon-button settings-button"
                 data-focusable="tv-settings"

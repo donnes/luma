@@ -1,0 +1,33 @@
+/* Injected by WebAppActivity (see tv.js): T3 Code's web client on a TV. */
+
+/* The D-pad is the only pointer: focus has to read from across the room. */
+.luma-tv *:focus-visible {
+  outline: 3px solid #3b82f6 !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 7px rgb(59 130 246 / 0.35) !important;
+}
+
+/* Text fields sit inside a styled wrapper, which gets the ring instead. */
+.luma-tv :is([data-slot='input-control'], [data-slot='textarea-control']) :focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+.luma-tv :is([data-slot='input-control'], [data-slot='textarea-control']):focus-within {
+  outline: 3px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* No mouse: hover-only affordances and scrollbars are noise. */
+.luma-tv,
+.luma-tv * {
+  cursor: none !important;
+  scrollbar-width: none;
+}
+.luma-tv ::-webkit-scrollbar {
+  display: none;
+}
+
+/* Keyboard shortcut hints mean nothing on a remote. */
+.luma-tv kbd {
+  display: none !important;
+}

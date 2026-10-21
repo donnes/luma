@@ -10,6 +10,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -107,6 +108,28 @@ public final class Shell {
           }
         });
     return "{}";
+  }
+
+  /**
+   * POC: opens a web app (T3 Code's own client) in {@link WebAppActivity};
+   * {@code then}, when not empty, loads once the page has left /pair.
+   */
+  @JavascriptInterface
+  public void openWebApp(String url, String then) {
+    boolean hasThen = then != null && !then.isEmpty();
+    if (!isWeb(url) || (hasThen && !isWeb(then))) {
+      Log.w(TAG, "Refusing to open " + url);
+      return;
+    }
+    Intent intent = new Intent(activity, WebAppActivity.class);
+    intent.putExtra(WebAppActivity.EXTRA_URL, url);
+    if (hasThen) intent.putExtra(WebAppActivity.EXTRA_THEN, then);
+    main.post(() -> activity.startActivity(intent));
+  }
+
+  private static boolean isWeb(String url) {
+    String scheme = url == null ? null : Uri.parse(url).getScheme();
+    return "http".equals(scheme) || "https".equals(scheme);
   }
 
   @JavascriptInterface

@@ -10,6 +10,7 @@ interface LumaShell {
   listApps(): string;
   launchApp(appId: string): string;
   exit(): void;
+  openWebApp?(url: string, then: string): void;
 }
 
 const shell = (): LumaShell | undefined =>
@@ -62,4 +63,12 @@ export function platformBack(): void {
   const host = shell();
   if (host) host.exit();
   else window.history.back();
+}
+
+// POC: hosts a web app (T3 Code's own client) in a second shell WebView.
+export const canOpenWebApp = (): boolean => typeof shell()?.openWebApp === 'function';
+
+/** `then` loads once the first page has left /pair, so pairing can land on a deep link. */
+export function openWebApp(url: string, then = ''): void {
+  shell()?.openWebApp?.(url, then);
 }
