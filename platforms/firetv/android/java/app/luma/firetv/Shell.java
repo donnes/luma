@@ -132,6 +132,18 @@ public final class Shell {
     return "http".equals(scheme) || "https".equals(scheme);
   }
 
+  /** Whether {@link HomeGuard} is on to watch agents and alert over other apps. */
+  @JavascriptInterface
+  public boolean canAlertOverApps() {
+    return HomeGuard.isEnabled(activity);
+  }
+
+  /** Hands {@link HomeGuard} the pairing to watch agents with; empty once unpaired. */
+  @JavascriptInterface
+  public void watchAgents(String config) {
+    HomeGuard.watchAgents(activity, config);
+  }
+
   @JavascriptInterface
   public synchronized void exit() {
     // With HomeGuard on, parking the task would only flash Amazon's home

@@ -7,4 +7,7 @@ export {
   registerRemoteKeys,
   canOpenWebApp,
   openWebApp,
+  canAlertOverApps,
+  watchAgents,
+  AGENT_ALERT_EVENT,
 } from '@luma/bridge';

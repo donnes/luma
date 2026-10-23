@@ -2,7 +2,10 @@ package app.luma.firetv;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
@@ -56,6 +59,19 @@ public class MainActivity extends Activity {
   private WebView webView;
   private final Shell shell = new Shell(this);
   private final Runnable reportShown = () -> HomeGuard.report(this, true);
+  /** HomeGuard's agent alerts while Luma is in front, for the page's own toast. */
+  private final BroadcastReceiver agentAlerts =
+      new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+          String alert = intent.getStringExtra(HomeGuard.EXTRA_ALERT);
+          if (alert != null) {
+            webView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent('luma:agent-alert',{detail:" + alert + "}))",
+                null);
+          }
+        }
+      };
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -72,6 +88,8 @@ public class MainActivity extends Activity {
     setContentView(layout);
 
     webView.loadUrl(BASE_URL + "index.html");
+    registerReceiver(
+        agentAlerts, new IntentFilter(HomeGuard.ACTION_AGENT_ALERT), HomeGuard.PERMISSION, null);
   }
 
   @Override
@@ -102,6 +120,7 @@ public class MainActivity extends Activity {
 
   @Override
   protected void onDestroy() {
+    unregisterReceiver(agentAlerts);
     if (webView != null) {
       webView.destroy();
     }

@@ -34,7 +34,10 @@ import { AgentsSummary } from './components/agents/agents-summary';
 import { ConnectionButton } from './components/agents/connection-button';
 import { AgentsInbox } from './components/agents/inbox';
 import { OpenT3Button } from './components/agents/open-t3-button';
-import { AGENTS_APP_ID, useAgentsLifecycle } from './agents/use-agents';
+import { AgentToast } from './components/agents/agent-toast';
+import { AGENTS_APP_ID, useAgentAlerts, useAgentsLifecycle } from './agents/use-agents';
+import { agentsConnection } from './agents/connection';
+import type { AgentAlert } from './agents/alerts';
 import { repairT3Code } from './agents/web-client';
 
 const categories: Category[] = ['Streaming', 'Music', 'Gaming', 'Utilities'];
@@ -95,7 +98,15 @@ function Launcher({
   const [conversation, setConversation] = useState<string | null>(null);
   const [inbox, setInbox] = useState(false);
   const agentsBack = useRef<(() => boolean) | null>(null);
+  const [agentAlert, setAgentAlert] = useState<AgentAlert | null>(null);
   useAgentsLifecycle();
+  useAgentAlerts(
+    useCallback((alert: AgentAlert) => {
+      // The agents page already shows the agent it follows.
+      if (agentsConnection().getState().detail?.threadId !== alert.threadId) setAgentAlert(alert);
+    }, []),
+  );
+  const dismissAgentAlert = useCallback(() => setAgentAlert(null), []);
   // Luma's own T3 Code app sits in the library like an installed one; it
   // opens to pairing until it's connected.
   const apps = useMemo(
@@ -940,6 +951,9 @@ function Launcher({
             <X size={18} />
           </button>
         </div>
+      ) : null}
+      {agentAlert ? (
+        <AgentToast key={agentAlert.requestId} alert={agentAlert} onDone={dismissAgentAlert} />
       ) : null}
       {launching ? (
         <div className="launch-status" role="status">

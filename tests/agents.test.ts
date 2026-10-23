@@ -10,6 +10,7 @@ import {
   pendingRequest,
   shelfAgents,
 } from '../src/agents/model.ts';
+import { takeAlerts } from '../src/agents/alerts.ts';
 import { learnRoutes, parsePairingInput, routeFor, routeKind } from '../src/agents/routes.ts';
 import type { ThreadShell } from '../src/agents/types.ts';
 
@@ -181,6 +182,51 @@ test('the inbox groups needs-you, done and working threads, each in its own orde
   assert.deepEqual(ids(inbox.needsYou), ['older-request', 'newer-request']);
   assert.deepEqual(ids(inbox.done), ['finished', 'settled', 'failed']);
   assert.deepEqual(ids(inbox.working), ['newer-run', 'older-run']);
+});
+
+test('alerts fire once per new request, not for what was waiting at first sight or after a reconnect', () => {
+  const snapshot = (...threads: ThreadShell[]) =>
+    applyShellItem(emptyShell(), {
+      kind: 'snapshot',
+      snapshot: { snapshotSequence: 1, projects: [], threads },
+    });
+  const request = (id: string, kind: 'command' | 'user_input' = 'command') => ({
+    pendingRuntimeRequest: { id, kind, createdAt: minutesAgo(1) },
+  });
+  const ids = (agents: { thread: { id: string } }[]) => agents.map((agent) => agent.thread.id);
+
+  // Luma's first snapshot ever only records what's already waiting.
+  let taken = takeAlerts(snapshot(thread('a', request('r1'))), null);
+  assert.deepEqual(ids(taken.alerts), []);
+  let seen = taken.seen;
+
+  taken = takeAlerts(
+    snapshot(thread('a', request('r1')), thread('b', request('r2', 'user_input'))),
+    seen,
+  );
+  assert.deepEqual(ids(taken.alerts), ['b']);
+  seen = taken.seen;
+
+  // A reconnect or restart brings the same requests in a fresh snapshot.
+  taken = takeAlerts(snapshot(thread('a', request('r1')), thread('b', request('r2'))), seen);
+  assert.deepEqual(ids(taken.alerts), []);
+  assert.equal(taken.seen, seen);
+
+  // Its question turning non-blocking and back doesn't count as new.
+  const nonBlocking = thread('b', {
+    status: 'running',
+    pendingRuntimeRequest: {
+      id: 'r2',
+      kind: 'user_input',
+      createdAt: minutesAgo(1),
+      blocking: false,
+    },
+  });
+  assert.deepEqual(ids(takeAlerts(snapshot(nonBlocking), seen).alerts), []);
+  assert.deepEqual(ids(takeAlerts(snapshot(thread('b', request('r2'))), seen).alerts), []);
+
+  // The next request from the same agent does.
+  assert.deepEqual(ids(takeAlerts(snapshot(thread('a', request('r3'))), seen).alerts), ['a']);
 });
 
 test('a pending approval pairs with its turn item and keeps the server’s decisions', () => {

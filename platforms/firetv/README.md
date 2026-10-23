@@ -12,6 +12,9 @@ a synchronous JSON call:
 - `listApps(): string` — JSON `{ "apps": [{ "id": string, "title": string }] }`
 - `launchApp(appId: string): string` — JSON `{ "error"?: string }`
 - `exit(): void`
+- `canAlertOverApps(): boolean` — whether HomeGuard is on (see below)
+- `watchAgents(config: string): void` — hands HomeGuard the T3 Code pairing
+  and the alert's words as JSON; an empty string once unpaired
 
 The shell (`platforms/firetv/android/`) injects the object with
 `addJavascriptInterface` and implements it as `app.luma.firetv.Shell`. App ids
@@ -113,6 +116,27 @@ service clicks its tile and Amazon's launcher opens Luma itself.
 - While the service is on, Back on Luma's home screen stays in Luma instead
   of parking the task. Fire TV Settings is a separate app and still opens
   from the Home long-press menu.
+
+## Agent alerts
+
+When a T3 Code agent newly needs you, a toast shows in the top-right corner
+for six seconds: inside Luma when it's in front, and over any other app
+otherwise, video included. HomeGuard draws the latter in an accessibility
+overlay window that takes no focus, keys or touches, so the app underneath
+keeps the remote and keeps playing.
+
+Luma's page can't watch agents from behind another app: Chromium throttles a
+hidden page's timers to once a minute and freezes it after a few minutes,
+and the low-memory killer takes the WebView process (about 105 MB with its
+renderer) as soon as it drops to a cached app. So HomeGuard keeps its own
+small connection (`AgentWatch`: a WebSocket client for the shell stream
+only, about 10 MB more in `:guard`), with the pairing the page hands over. It
+alerts once per request, and remembers which across restarts. While Luma is
+in front, it passes the alert to the page, which shows the same toast unless
+the agents page already shows that agent.
+
+Force-stopping Luma also turns HomeGuard off (Android removes it from the
+enabled services); enable it again with the commands above.
 
 ## TODO
 

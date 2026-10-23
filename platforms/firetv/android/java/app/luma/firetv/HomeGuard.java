@@ -9,20 +9,31 @@ import android.content.IntentFilter;
 import android.content.pm.ServiceInfo;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.text.TextUtils;
+import android.util.DisplayMetrics;
 import android.util.Log;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.animation.DecelerateInterpolator;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityManager;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import java.util.List;
+import org.json.JSONObject;
 
 /**
  * Keeps Luma in front of the Fire TV home screen. Fire OS hard-wires the Home
@@ -48,6 +59,12 @@ import java.util.List;
  * it down together with Luma's WebView. MainActivity reports when it is in
  * front through a signature-protected broadcast.
  *
+ * <p>It also watches the paired T3 Code server ({@link AgentWatch}) and alerts
+ * when an agent newly needs you: over another app as a toast in the top-right
+ * corner, in a window that takes no focus, keys or touches, so the app
+ * underneath keeps the remote and keeps playing; or, while Luma is in front,
+ * through Luma's page, which shows the same toast itself.
+ *
  * <p>Events come only from Amazon's launcher package; window content is read
  * only to find the Luma tile there. Enable it once over ADB (see
  * platforms/firetv/README.md).
@@ -61,7 +78,12 @@ public final class HomeGuard extends AccessibilityService {
 
   private static final String ACTION_LUMA_SHOWN = "app.luma.firetv.LUMA_SHOWN";
   private static final String ACTION_LUMA_HIDDEN = "app.luma.firetv.LUMA_HIDDEN";
-  private static final String PERMISSION = "com.luma.launcher.permission.HOME_GUARD";
+  private static final String ACTION_WATCH_AGENTS = "app.luma.firetv.WATCH_AGENTS";
+  private static final String EXTRA_CONFIG = "config";
+  /** To MainActivity, while Luma is in front. */
+  static final String ACTION_AGENT_ALERT = "app.luma.firetv.AGENT_ALERT";
+  static final String EXTRA_ALERT = "alert";
+  static final String PERMISSION = "com.luma.launcher.permission.HOME_GUARD";
 
   /** Longer than the app-switch delay; never leave the remote dead if Luma fails to start. */
   private static final long COVER_TIMEOUT_MS = 8000;
@@ -73,11 +95,17 @@ public final class HomeGuard extends AccessibilityService {
   /** Look for the tile until the queued start lands anyway. */
   private static final long TILE_RETRY_MS = 100;
   private static final int TILE_ATTEMPTS = 50;
+  /** AGENT_TOAST_MS in agent-toast.tsx, fade-out included. */
+  private static final long ALERT_MS = 6000;
+  private static final long ALERT_FADE_MS = 200;
 
   private final Handler main = new Handler(Looper.getMainLooper());
   private final Runnable uncover = this::uncover;
   private final Runnable clickTile = this::clickTile;
+  private final Runnable hideAlert = this::hideAlert;
   private FrameLayout cover;
+  private View alert;
+  private AgentWatch agents;
   private int tileAttempts;
   private boolean lumaVisible;
   private long lumaShownAt;
@@ -86,12 +114,15 @@ public final class HomeGuard extends AccessibilityService {
       new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-          if (ACTION_LUMA_SHOWN.equals(intent.getAction())) {
+          String action = intent.getAction();
+          if (ACTION_LUMA_SHOWN.equals(action)) {
             lumaVisible = true;
             lumaShownAt = SystemClock.uptimeMillis();
             uncover();
-          } else {
+          } else if (ACTION_LUMA_HIDDEN.equals(action)) {
             lumaVisible = false;
+          } else if (ACTION_WATCH_AGENTS.equals(action) && agents != null) {
+            agents.configure(intent.getStringExtra(EXTRA_CONFIG));
           }
         }
       };
@@ -118,17 +149,31 @@ public final class HomeGuard extends AccessibilityService {
     context.sendBroadcast(intent, PERMISSION);
   }
 
+  /** Luma's page hands over its pairing and the alert's words; see {@link AgentWatch#configure}. */
+  static void watchAgents(Context context, String config) {
+    Intent intent = new Intent(ACTION_WATCH_AGENTS);
+    intent.setPackage(context.getPackageName());
+    intent.putExtra(EXTRA_CONFIG, config);
+    context.sendBroadcast(intent, PERMISSION);
+  }
+
   @Override
   protected void onServiceConnected() {
     IntentFilter states = new IntentFilter(ACTION_LUMA_SHOWN);
     states.addAction(ACTION_LUMA_HIDDEN);
+    states.addAction(ACTION_WATCH_AGENTS);
     registerReceiver(lumaState, states, PERMISSION, null);
+    agents = new AgentWatch(this, this::onAgentAlert);
+    agents.start();
   }
 
   @Override
   public void onDestroy() {
     unregisterReceiver(lumaState);
+    if (agents != null) agents.stop();
     uncover();
+    main.removeCallbacks(hideAlert);
+    removeAlert();
     super.onDestroy();
   }
 
@@ -242,6 +287,177 @@ public final class HomeGuard extends AccessibilityService {
       Log.w(TAG, "Removing the cover failed", e);
     }
     cover = null;
+  }
+
+  /** Luma's page shows its own toast while it's in front; elsewhere the alert goes over the app. */
+  private void onAgentAlert(JSONObject alert) {
+    if (lumaVisible) {
+      Intent intent = new Intent(ACTION_AGENT_ALERT);
+      intent.setPackage(getPackageName());
+      intent.putExtra(EXTRA_ALERT, alert.toString());
+      sendBroadcast(intent, PERMISSION);
+    } else {
+      showAlert(alert);
+    }
+  }
+
+  /** A newer alert replaces the one on screen and starts the clock again. */
+  private void showAlert(JSONObject json) {
+    View card;
+    try {
+      card = alertCard(json);
+    } catch (RuntimeException e) {
+      Log.w(TAG, "Showing an agent alert failed", e);
+      return;
+    }
+    main.removeCallbacks(hideAlert);
+    removeAlert();
+    WindowManager.LayoutParams params =
+        new WindowManager.LayoutParams(
+            rems(55),
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            // Never focused or touched: keys and playback stay with the app underneath.
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            PixelFormat.TRANSLUCENT);
+    params.gravity = Gravity.TOP | Gravity.END;
+    params.x = rems(5);
+    params.y = rems(4);
+    params.setTitle("Luma agent alert");
+    try {
+      ((WindowManager) getSystemService(WINDOW_SERVICE)).addView(card, params);
+    } catch (RuntimeException e) {
+      Log.w(TAG, "Showing an agent alert failed", e);
+      return;
+    }
+    alert = card;
+    card.setAlpha(0);
+    card.setTranslationY(-rems(0.75f));
+    card.animate()
+        .alpha(1)
+        .translationY(0)
+        .setDuration(240)
+        .setInterpolator(new DecelerateInterpolator(2));
+    main.postDelayed(hideAlert, ALERT_MS - ALERT_FADE_MS);
+  }
+
+  private void hideAlert() {
+    View card = alert;
+    if (card == null) {
+      return;
+    }
+    card.animate()
+        .alpha(0)
+        .setDuration(ALERT_FADE_MS)
+        .withEndAction(
+            () -> {
+              if (alert == card) {
+                removeAlert();
+              }
+            });
+  }
+
+  private void removeAlert() {
+    if (alert == null) {
+      return;
+    }
+    try {
+      ((WindowManager) getSystemService(WINDOW_SERVICE)).removeViewImmediate(alert);
+    } catch (RuntimeException e) {
+      Log.w(TAG, "Removing an agent alert failed", e);
+    }
+    alert = null;
+  }
+
+  /**
+   * Pixels for a size in rem as agent-toast.css uses it on a 1080p page, 1/120
+   * of the screen width. Luma's own page on a Fire TV stick renders its rem a
+   * quarter larger, so the in-app toast is bigger than this one.
+   */
+  private int rems(float count) {
+    DisplayMetrics metrics = getResources().getDisplayMetrics();
+    return Math.round(count * Math.max(metrics.widthPixels, metrics.heightPixels) / 120f);
+  }
+
+  /** A native copy of AgentToast; keep it in step with src/components/agents/agent-toast.css. */
+  private View alertCard(JSONObject alert) {
+    int amber = Color.rgb(245, 194, 107);
+    int muted = Color.argb(143, 245, 245, 245);
+
+    LinearLayout card = new LinearLayout(this);
+    card.setPadding(rems(2), rems(1.75f), rems(2), rems(1.75f));
+    GradientDrawable background =
+        new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            new int[] {Color.argb(247, 44, 48, 51), Color.argb(252, 29, 32, 36)});
+    background.setCornerRadius(rems(1.7f));
+    background.setStroke(Math.max(1, rems(1 / 16f)), Color.argb(31, 255, 255, 255));
+    card.setBackground(background);
+
+    View bar = new View(this);
+    bar.setBackground(rounded(amber, rems(0.25f)));
+    LinearLayout.LayoutParams barSize =
+        new LinearLayout.LayoutParams(rems(0.5f), ViewGroup.LayoutParams.MATCH_PARENT);
+    barSize.setMarginEnd(rems(1.5f));
+    card.addView(bar, barSize);
+
+    LinearLayout body = new LinearLayout(this);
+    body.setOrientation(LinearLayout.VERTICAL);
+    card.addView(body, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+    LinearLayout headline = new LinearLayout(this);
+    headline.setGravity(Gravity.CENTER_VERTICAL);
+    headline.setPadding(0, 0, 0, rems(0.55f));
+    ImageView glyph = new ImageView(this);
+    glyph.setImageResource(R.drawable.t3_glyph);
+    glyph.setBackground(rounded(Color.rgb(245, 245, 245), rems(0.4f)));
+    glyph.setPadding(rems(0.2f), rems(0.2f), rems(0.2f), rems(0.2f));
+    LinearLayout.LayoutParams glyphSize = new LinearLayout.LayoutParams(rems(1.7f), rems(1.7f));
+    glyphSize.setMarginEnd(rems(0.7f));
+    headline.addView(glyph, glyphSize);
+    headline.addView(
+        line(alert.optString("headline"), rems(1.5f), amber, true),
+        new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+    String source = alert.optString("source");
+    if (!source.isEmpty()) {
+      TextView label = line(source, rems(1.3f), muted, false);
+      label.setPadding(rems(1), 0, 0, 0);
+      headline.addView(label);
+    }
+    body.addView(headline);
+
+    TextView title = line(alert.optString("title"), rems(2.1f), Color.rgb(245, 245, 245), true);
+    title.setLetterSpacing(-0.03f);
+    body.addView(title);
+    String detail = alert.optString("detail");
+    if (!detail.isEmpty()) {
+      TextView project = line(detail, rems(1.5f), muted, false);
+      project.setPadding(0, rems(0.35f), 0, 0);
+      body.addView(project);
+    }
+    return card;
+  }
+
+  private static GradientDrawable rounded(int color, int radius) {
+    GradientDrawable shape = new GradientDrawable();
+    shape.setColor(color);
+    shape.setCornerRadius(radius);
+    return shape;
+  }
+
+  private TextView line(String text, int size, int color, boolean medium) {
+    TextView view = new TextView(this);
+    view.setText(text);
+    view.setTextSize(TypedValue.COMPLEX_UNIT_PX, size);
+    view.setTextColor(color);
+    view.setTypeface(Typeface.create(medium ? "sans-serif-medium" : "sans-serif", Typeface.NORMAL));
+    view.setSingleLine(true);
+    view.setEllipsize(TextUtils.TruncateAt.END);
+    view.setIncludeFontPadding(false);
+    return view;
   }
 
   @Override

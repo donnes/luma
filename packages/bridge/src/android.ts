@@ -11,6 +11,8 @@ interface LumaShell {
   launchApp(appId: string): string;
   exit(): void;
   openWebApp?(url: string, then: string): void;
+  canAlertOverApps?(): boolean;
+  watchAgents?(config: string): void;
 }
 
 const shell = (): LumaShell | undefined =>
@@ -72,3 +74,28 @@ export const canOpenWebApp = (): boolean => typeof shell()?.openWebApp === 'func
 export function openWebApp(url: string, then = ''): void {
   shell()?.openWebApp?.(url, then);
 }
+
+// Fire TV: with HomeGuard enabled, the shell keeps its own connection to the
+// paired T3 Code server, since the low-memory killer soon takes this page
+// once another app is in front. It alerts over that app when an agent newly
+// needs you and, while Luma is in front, sends the alert here as an event.
+export const canAlertOverApps = (): boolean => shell()?.canAlertOverApps?.() === true;
+
+export interface AgentWatch {
+  /** Server origins, best first. */
+  routes: string[];
+  token: string;
+  /** The server's name, shown top right. */
+  source: string;
+  /** Headlines, in the user's language: "Needs you · asked a question". */
+  asked: string;
+  approval: string;
+}
+
+/** Hands the shell the pairing to watch agents with; null once unpaired. */
+export function watchAgents(config: AgentWatch | null): void {
+  shell()?.watchAgents?.(config ? JSON.stringify(config) : '');
+}
+
+/** The shell's alerts while Luma is in front; `detail` is an alert like AgentToast's. */
+export const AGENT_ALERT_EVENT = 'luma:agent-alert';

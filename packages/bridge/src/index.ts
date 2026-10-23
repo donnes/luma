@@ -8,7 +8,14 @@ import * as desktop from './desktop';
 export * from './types';
 export * from './catalog';
 export { nativeCall } from './webos';
-export { canOpenWebApp, openWebApp } from './android';
+export {
+  canOpenWebApp,
+  openWebApp,
+  canAlertOverApps,
+  watchAgents,
+  AGENT_ALERT_EVENT,
+} from './android';
+export type { AgentWatch } from './android';
 
 // Ordered by detection confidence: webOS exposes service bridges, Tizen exposes
 // the tizen namespace, and Android/Fire TV exposes an injected shell object.

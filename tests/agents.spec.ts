@@ -66,6 +66,8 @@ async function mockT3(
   const commands: Record<string, unknown>[] = [];
   let up = true;
   const sockets: WebSocketRoute[] = [];
+  // Sends later shell stream items, as the server does when threads change.
+  let pushShell: (...items: object[]) => void = () => {};
   const json = (route: Route, body: unknown) =>
     route.fulfill({
       status: 200,
@@ -99,11 +101,12 @@ async function mockT3(
       const message = JSON.parse(String(raw));
       if (message._tag !== 'Request') return;
       const { id, tag, payload } = message;
-      if (tag === 'orchestration.subscribeShell')
+      if (tag === 'orchestration.subscribeShell') {
         void (shellSent ?? Promise.resolve()).then(() =>
           reply({ _tag: 'Chunk', requestId: id, values: [shell] }),
         );
-      else if (tag === 'orchestration.subscribeThread')
+        pushShell = (...items) => reply({ _tag: 'Chunk', requestId: id, values: items });
+      } else if (tag === 'orchestration.subscribeThread')
         void (threadSent ?? Promise.resolve()).then(() =>
           reply({ _tag: 'Chunk', requestId: id, values: [threadSnapshot] }),
         );
@@ -119,7 +122,7 @@ async function mockT3(
     up = false;
     for (const socket of sockets) await socket.close();
   };
-  return { commands, down };
+  return { commands, down, pushShell: (...items: object[]) => pushShell(...items) };
 }
 
 test('the T3 Code app opens to pairing, then OK approves the waiting agent', async ({ page }) => {
@@ -476,4 +479,50 @@ test('the list scrolls a tall group with the remote and back to its first row', 
   for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowUp');
   await expect(first).toBeFocused();
   await expect(first).toBeInViewport({ ratio: 1 });
+});
+
+test('an agent that newly needs you shows a toast, except where the agents page shows it', async ({
+  page,
+}) => {
+  const { pushShell } = await mockT3(page);
+  await page.goto('/');
+  // Pairing lands on the agents page with the waiting agent in the spotlight;
+  // what was already waiting doesn't alert.
+  await pair(page);
+  await expect(
+    page.getByRole('heading', { name: 'Browser tests for the Agents tile' }),
+  ).toBeVisible();
+  const toast = page.locator('.agent-toast');
+  const waiting = (sequence: number, id: string, title: string, request: string) => ({
+    kind: 'thread.updated',
+    sequence,
+    location: 'active',
+    thread: inboxThread(id, 'p1', title, {
+      status: 'running',
+      activityRunStatus: 'waiting',
+      pendingRuntimeRequest: { id: request, kind: 'user_input', createdAt: minutesAgo(0) },
+    }),
+  });
+
+  // A new question from another agent shows; one from the agent on screen,
+  // arriving after it in the same update, would replace it if it alerted.
+  pushShell(
+    waiting(6, 'thread-2', 'Second opinion on the overlay', 'r6'),
+    waiting(7, threadId, 'Browser tests for the Agents tile', 'r5'),
+  );
+  await expect(toast).toHaveCount(1);
+  await expect(toast).toContainText('Second opinion on the overlay');
+
+  await page.keyboard.press('Escape');
+  await expect(toast).toBeHidden({ timeout: 8000 });
+  pushShell(waiting(8, 'thread-3', 'Pick a name for the release', 'r7'));
+  await expect(toast).toBeVisible();
+  await expect(toast.locator('.agent-toast-headline')).toHaveText(
+    'Needs you · asked a questionworkstation',
+  );
+  await expect(toast.locator('strong')).toHaveText('Pick a name for the release');
+  await expect(toast.locator('small')).toHaveText('luma');
+  // Fully shown once it has slid in, then gone after a few seconds.
+  await expect(toast).toHaveCSS('opacity', '1');
+  await expect(toast).toBeHidden({ timeout: 8000 });
 });
