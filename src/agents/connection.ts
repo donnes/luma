@@ -165,6 +165,9 @@ export class AgentsConnection {
     this.set({ status: 'connecting' });
     const now = Date.now();
     const routes = pairing.routes.filter((route) => (this.cooldown.get(route.url) ?? 0) < now);
+    // Only routes that answer as the paired environment right now get the
+    // token. An address proves nothing by itself: LAN addresses change owners,
+    // and a Tailscale address names a device, not the server listening on it.
     const answered = await Promise.all(
       routes.map((route) =>
         describe(route, PROBE_MS)
@@ -173,12 +176,7 @@ export class AgentsConnection {
       ),
     );
     if (attempt !== this.attempt) return;
-    // Routes that answered as this environment first, in rank order; silent
-    // ones are a last resort since the check itself can be what's blocked.
-    const order = [
-      ...routes.filter((_, index) => answered[index]),
-      ...routes.filter((_, index) => !answered[index]),
-    ];
+    const order = routes.filter((_, index) => answered[index]);
     for (const route of order) {
       try {
         await this.open(route, attempt);

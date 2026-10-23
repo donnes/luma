@@ -1,6 +1,6 @@
 import { canOpenWebApp, openWebApp } from '../bridge';
 import { agentsConnection } from './connection';
-import { pairingCode } from './pairing';
+import { describe, pairingCode } from './pairing';
 
 // POC: where the shell can host a second WebView (Fire TV), the full T3 Code
 // client opens beside Luma's own agents page: the web app the paired server
@@ -10,6 +10,7 @@ import { pairingCode } from './pairing';
 const STORAGE_KEY = 'luma.t3web.v1';
 /** A session that's gone again this soon after pairing won't stick; don't loop. */
 const REPAIR_GRACE_MS = 30000;
+const PROBE_MS = 5000;
 
 export const canOpenT3Code = canOpenWebApp;
 
@@ -26,6 +27,10 @@ export async function openT3Code(path = '') {
     openWebApp(server.url + path);
     return;
   }
+  // The address may be stale or offline, and another server may answer there
+  // now. Only the paired environment gets the token.
+  const environment = await describe(server, PROBE_MS);
+  if (environment.environmentId !== pairing.environmentId) throw new Error('wrongEnvironment');
   const code = await pairingCode(server, pairing.token, 'Luma TV (T3 Code)');
   pairedAt = Date.now();
   localStorage.setItem(STORAGE_KEY, server.url);

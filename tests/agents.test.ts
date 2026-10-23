@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { test, type TestContext } from 'node:test';
 import {
   agentStatus,
   applyShellItem,
@@ -9,6 +11,13 @@ import {
   pendingRequest,
   shelfAgents,
 } from '../src/agents/model.ts';
+import {
+  describe,
+  ORCHESTRATION_PROTOCOL,
+  pair,
+  pairingCode,
+  websocketTicket,
+} from '../src/agents/pairing.ts';
 import { learnRoutes, parsePairingInput, routeFor, routeKind } from '../src/agents/routes.ts';
 import type { ThreadShell } from '../src/agents/types.ts';
 
@@ -261,4 +270,60 @@ test('working agents keep their shelf order while they emit updates', () => {
     shelfAgents(shell, now).map((agent) => agent.thread.id),
     ['newer-run', 'older-run'],
   );
+});
+
+/** Serves `handler` on a free loopback port and closes it when the test ends. */
+async function serve(
+  t: TestContext,
+  handler: (request: IncomingMessage, response: ServerResponse) => void,
+): Promise<string> {
+  const server = createServer(handler);
+  t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
+}
+
+const json = (response: ServerResponse, body: unknown) => {
+  response.setHeader('content-type', 'application/json');
+  response.end(JSON.stringify(body));
+};
+
+test('an identity check only vouches for the address it asked, not where it was redirected', async (t) => {
+  const paired = await serve(t, (_, response) =>
+    json(response, { environmentId: 'env-1', label: 'workstation' }),
+  );
+  const other = await serve(t, (_, response) => {
+    response.writeHead(302, { location: `${paired}.well-known/t3/environment` });
+    response.end();
+  });
+  assert.equal((await describe(routeFor(paired), 2000)).environmentId, 'env-1');
+  await assert.rejects(describe(routeFor(other), 2000));
+});
+
+test('the pairing code and token never follow a redirect to another address', async (t) => {
+  // Anything reaching this address got a credential it never proved it should have.
+  const forwarded: string[] = [];
+  const elsewhere = await serve(t, (request, response) => {
+    forwarded.push(`${request.method} ${request.url}`);
+    json(response, { access_token: 'stolen', ticket: 'stolen', credential: 'stolen' });
+  });
+  const paired = await serve(t, (request, response) => {
+    if (request.url === '/.well-known/t3/environment')
+      return json(response, {
+        environmentId: 'env-1',
+        label: 'workstation',
+        orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL,
+      });
+    // 307 keeps the method and body, so the code or token would go along.
+    response.writeHead(307, { location: `${elsewhere}${request.url?.slice(1)}` });
+    response.end();
+  });
+  const route = routeFor(paired);
+  await assert.rejects(pair(paired, 'BOOTSTRAP', 'Luma TV'));
+  await assert.rejects(websocketTicket(route, 'token-1'));
+  await assert.rejects(pairingCode(route, 'token-1', 'Luma TV (T3 Code)'));
+  assert.deepEqual(forwarded, []);
 });

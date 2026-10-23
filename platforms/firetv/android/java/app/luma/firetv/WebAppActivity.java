@@ -19,6 +19,9 @@ import android.webkit.WebViewClient;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.Locale;
 import org.json.JSONObject;
 
 /**
@@ -41,6 +44,11 @@ public class WebAppActivity extends Activity {
   private boolean handoff;
   /** The deep link is loading; forget the pairing pages before it. */
   private boolean forgetHistory;
+  /**
+   * The T3 server Luma verified before minting the pairing code. The page stays
+   * on it: a redirect elsewhere would carry the code in the URL fragment.
+   */
+  private String origin;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -66,6 +74,7 @@ public class WebAppActivity extends Activity {
   private void load(Intent intent) {
     String url = intent.getStringExtra(EXTRA_URL);
     then = intent.getStringExtra(EXTRA_THEN);
+    origin = origin(url);
     handoff = "/pair".equals(Uri.parse(url).getPath());
     webView.loadUrl(url);
   }
@@ -99,6 +108,26 @@ public class WebAppActivity extends Activity {
         });
   }
 
+  /**
+   * scheme://host:port, or "" for anything that isn't http(s) or doesn't parse.
+   * java.net.URI, because Android 9's Uri cuts IPv6 hosts at the first colon,
+   * which would make different Tailscale addresses look like one origin.
+   */
+  private static String origin(String url) {
+    try {
+      URI uri = new URI(url);
+      String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+      int port = uri.getPort();
+      if ("http".equals(scheme)) port = port == -1 ? 80 : port;
+      else if ("https".equals(scheme)) port = port == -1 ? 443 : port;
+      else return "";
+      if (uri.getHost() == null) return "";
+      return scheme + "://" + uri.getHost().toLowerCase(Locale.ROOT) + ":" + port;
+    } catch (URISyntaxException e) {
+      return "";
+    }
+  }
+
   @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
   private WebView createWebView() {
     WebView view = new WebView(this);
@@ -120,9 +149,11 @@ public class WebAppActivity extends Activity {
         new WebViewClient() {
           @Override
           public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-            String scheme = request.getUrl().getScheme();
-            // Downloads, mailto: and other apps' links have nowhere to go on the TV.
-            return !"http".equals(scheme) && !"https".equals(scheme);
+            // Also called for server redirects. Downloads, mailto: and other
+            // apps' links have nowhere to go on the TV, and other sites
+            // mustn't load with the pairing code or the TV adjustments.
+            String target = origin(request.getUrl().toString());
+            return target.isEmpty() || request.isForMainFrame() && !target.equals(origin);
           }
 
           // Both hooks run the (idempotent) injection: the first as soon as the
