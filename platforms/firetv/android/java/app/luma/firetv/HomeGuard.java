@@ -28,8 +28,10 @@ import java.util.List;
  * Keeps Luma in front of the Fire TV home screen. Fire OS hard-wires the Home
  * key (and the exit of most apps) to Amazon's launcher and refuses a
  * replacement HOME activity, so this accessibility service brings Luma back
- * whenever that launcher shows up. It also covers boot: enabled services
- * start with the system, and the launcher is the first window they see.
+ * whenever that launcher's home screen shows up. Other screens in the same
+ * package, such as voice search results, are left alone. It also covers boot:
+ * enabled services start with the system, and the home screen is the first
+ * window they see.
  *
  * <p>After the Home key, Android defers background activity starts for about
  * five seconds (app-switch protection). Android 9 handles Home before
@@ -54,6 +56,8 @@ public final class HomeGuard extends AccessibilityService {
 
   private static final String TAG = "luma";
   private static final String AMAZON_HOME = "com.amazon.tv.launcher";
+  /** Fire OS 7 names it HomeActivity_vNext; the prefix covers renames like that. */
+  private static final String AMAZON_HOME_SCREEN = "com.amazon.tv.launcher.ui.HomeActivity";
 
   private static final String ACTION_LUMA_SHOWN = "app.luma.firetv.LUMA_SHOWN";
   private static final String ACTION_LUMA_HIDDEN = "app.luma.firetv.LUMA_HIDDEN";
@@ -131,7 +135,8 @@ public final class HomeGuard extends AccessibilityService {
   @Override
   public void onAccessibilityEvent(AccessibilityEvent event) {
     if (event.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-        || !AMAZON_HOME.contentEquals(event.getPackageName())) {
+        || !AMAZON_HOME.contentEquals(event.getPackageName())
+        || !String.valueOf(event.getClassName()).startsWith(AMAZON_HOME_SCREEN)) {
       return;
     }
     // Already on the way back, or Luma just arrived.
