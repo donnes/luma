@@ -1,6 +1,5 @@
 package app.luma.firetv;
 
-import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
@@ -39,13 +38,13 @@ public final class Shell {
   /** Same application id as the webOS package, excluded from the library. */
   private static final String SELF = "com.luma.launcher";
 
-  private final Activity activity;
+  private final MainActivity activity;
   private final Handler main;
   private Catalog catalog;
   /** Encoded tile art per package; a package without art maps to null. */
   private final HashMap<String, byte[]> art = new HashMap<>();
 
-  Shell(Activity activity) {
+  Shell(MainActivity activity) {
     this.activity = activity;
     this.main = new Handler(Looper.getMainLooper());
   }
@@ -142,6 +141,12 @@ public final class Shell {
   @JavascriptInterface
   public void watchAgents(String config) {
     HomeGuard.watchAgents(activity, config);
+  }
+
+  /** The page now listens for HomeGuard's alerts; the ones held back meanwhile follow. */
+  @JavascriptInterface
+  public void listenForAgentAlerts() {
+    main.post(activity::onPageListening);
   }
 
   @JavascriptInterface

@@ -30,6 +30,15 @@ export const agentAlert = (
   source,
 });
 
+/** The ids of every request pending in `shell`, whether it needs you or not. */
+export function pendingRequests(shell: Shell) {
+  const pending = new Set<string>();
+  for (const thread of shell.threads.values()) {
+    if (thread.pendingRuntimeRequest) pending.add(thread.pendingRuntimeRequest.id);
+  }
+  return pending;
+}
+
 // Requests Luma has already alerted about and that are still pending, kept
 // across restarts so that a reconnect's snapshot doesn't announce them again.
 // A request leaves once it ends; asking again makes a new request id.
@@ -66,10 +75,7 @@ export function takeAlerts(shell: Shell, seen: string[] | null) {
     const id = agent.thread.pendingRuntimeRequest?.id;
     return id === undefined || known.has(id) ? [] : [{ agent, id }];
   });
-  const pending = new Set<string>();
-  for (const thread of shell.threads.values()) {
-    if (thread.pendingRuntimeRequest) pending.add(thread.pendingRuntimeRequest.id);
-  }
+  const pending = pendingRequests(shell);
   const kept = (seen ?? []).filter((id) => pending.has(id));
   // Unchanged history keeps its identity, so callers can skip saving it.
   if (seen && !fresh.length && kept.length === seen.length) return { alerts: [] as Agent[], seen };

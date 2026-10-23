@@ -36,8 +36,6 @@ import { AgentsInbox } from './components/agents/inbox';
 import { OpenT3Button } from './components/agents/open-t3-button';
 import { AgentToast } from './components/agents/agent-toast';
 import { AGENTS_APP_ID, useAgentAlerts, useAgentsLifecycle } from './agents/use-agents';
-import { agentsConnection } from './agents/connection';
-import type { AgentAlert } from './agents/alerts';
 import { repairT3Code } from './agents/web-client';
 
 const categories: Category[] = ['Streaming', 'Music', 'Gaming', 'Utilities'];
@@ -98,18 +96,8 @@ function Launcher({
   const [conversation, setConversation] = useState<string | null>(null);
   const [inbox, setInbox] = useState(false);
   const agentsBack = useRef<(() => boolean) | null>(null);
-  // Several agents can need you at once; each gets its turn on screen.
-  const [agentAlerts, setAgentAlerts] = useState<AgentAlert[]>([]);
-  const agentAlert = agentAlerts[0];
   useAgentsLifecycle();
-  useAgentAlerts(
-    useCallback((alert: AgentAlert) => {
-      // The agents page already shows the agent it follows.
-      if (agentsConnection().getState().detail?.threadId !== alert.threadId)
-        setAgentAlerts((queued) => [...queued, alert]);
-    }, []),
-  );
-  const nextAgentAlert = useCallback(() => setAgentAlerts((queued) => queued.slice(1)), []);
+  const { alert: agentAlert, done: nextAgentAlert } = useAgentAlerts();
   // Luma's own T3 Code app sits in the library like an installed one; it
   // opens to pairing until it's connected.
   const apps = useMemo(

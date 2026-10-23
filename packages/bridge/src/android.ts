@@ -13,6 +13,7 @@ interface LumaShell {
   openWebApp?(url: string, then: string): void;
   canAlertOverApps?(): boolean;
   watchAgents?(config: string): void;
+  listenForAgentAlerts?(): void;
 }
 
 const shell = (): LumaShell | undefined =>
@@ -104,3 +105,8 @@ export function watchAgents(config: AgentWatch | null): void {
 
 /** The shell's alerts while Luma is in front; `detail` is an alert like AgentToast's. */
 export const AGENT_ALERT_EVENT = 'luma:agent-alert';
+
+/** Tells the shell the page listens for AGENT_ALERT_EVENT; it holds alerts back until then. */
+export function listenForAgentAlerts(): void {
+  shell()?.listenForAgentAlerts?.();
+}

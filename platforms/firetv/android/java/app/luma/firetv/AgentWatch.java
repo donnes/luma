@@ -7,13 +7,13 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.text.TextUtils;
-import android.util.AtomicFile;
 import android.util.Base64;
 import android.util.Log;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.EOFException;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -32,6 +32,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLPeerUnverifiedException;
 import javax.net.ssl.SSLSocket;
@@ -64,6 +65,9 @@ final class AgentWatch {
    */
   interface Listener {
     void onAlert(JSONObject alert);
+
+    /** Requests alerted about before that are no longer pending. */
+    void onEnded(Set<String> requestIds);
   }
 
   private static final String TAG = "luma";
@@ -103,21 +107,31 @@ final class AgentWatch {
    * {@code routes} (server origins, best first), {@code token}, {@code source},
    * {@code asked} and {@code approval}, or an empty string once Luma is
    * unpaired. Saved whether HomeGuard runs or not; {@link #reload} picks it up.
+   *
+   * <p>HomeGuard's process may read the file at any moment, and a lock here
+   * covers only this process. So the new pairing goes to a temporary file
+   * first and is renamed over the old one, which is atomic: a reader gets the
+   * old pairing or the new one, whole, and can't disturb the write, as
+   * AtomicFile's reader could by restoring its backup.
    */
   static synchronized void save(Context context, String config) {
-    AtomicFile file = new AtomicFile(new File(context.getFilesDir(), CONFIG_FILE));
+    File file = new File(context.getFilesDir(), CONFIG_FILE);
     if (config == null || config.isEmpty()) {
       file.delete();
       return;
     }
-    FileOutputStream out = null;
-    try {
-      out = file.startWrite();
+    File temporary = new File(context.getFilesDir(), CONFIG_FILE + ".tmp");
+    try (FileOutputStream out = new FileOutputStream(temporary)) {
       out.write(config.getBytes(StandardCharsets.UTF_8));
-      file.finishWrite(out);
+      out.getFD().sync();
     } catch (IOException e) {
-      if (out != null) file.failWrite(out);
+      temporary.delete();
       Log.w(TAG, "Saving the agent watch failed", e);
+      return;
+    }
+    if (!temporary.renameTo(file)) {
+      temporary.delete();
+      Log.w(TAG, "Saving the agent watch failed: rename refused");
     }
   }
 
@@ -138,10 +152,8 @@ final class AgentWatch {
   }
 
   private String load() {
-    try {
-      return new String(
-          new AtomicFile(new File(context.getFilesDir(), CONFIG_FILE)).readFully(),
-          StandardCharsets.UTF_8);
+    try (InputStream in = new FileInputStream(new File(context.getFilesDir(), CONFIG_FILE))) {
+      return readAll(in);
     } catch (FileNotFoundException e) {
       return null;
     } catch (IOException e) {
@@ -339,18 +351,22 @@ final class AgentWatch {
   /**
    * Records the waiting requests and alerts about the ones not seen before.
    * With no history at all, the first snapshot only records what's waiting.
-   * The history keeps only requests still pending, like takeAlerts().
+   * The history keeps only requests still pending, like takeAlerts(); the
+   * ones that leave it are reported, so that their alerts don't show late.
    */
   private void alert(List<JSONObject> waiting, HashSet<String> pending) {
     String saved = prefs.getString(KEY_SEEN, null);
     LinkedHashSet<String> seen = new LinkedHashSet<>();
     if (saved != null && !saved.isEmpty()) seen.addAll(Arrays.asList(saved.split("\n")));
-    boolean ended = seen.retainAll(pending);
+    HashSet<String> ended = new HashSet<>(seen);
+    ended.removeAll(pending);
+    seen.removeAll(ended);
+    if (!ended.isEmpty()) main.post(() -> listener.onEnded(ended));
     List<JSONObject> fresh = new ArrayList<>();
     for (JSONObject alert : waiting) {
       if (seen.add(alert.optString("requestId"))) fresh.add(alert);
     }
-    if (!ended && fresh.isEmpty() && saved != null) return;
+    if (ended.isEmpty() && fresh.isEmpty() && saved != null) return;
     prefs.edit().putString(KEY_SEEN, TextUtils.join("\n", seen)).apply();
     if (saved == null) return;
     for (JSONObject alert : fresh) {

@@ -16,6 +16,8 @@ a synchronous JSON call:
 - `watchAgents(config: string): void` — hands HomeGuard the T3 Code pairing
   and the alert's words as JSON; an empty string once unpaired. The shell
   saves it even while HomeGuard is off
+- `listenForAgentAlerts(): void` — the page now listens for HomeGuard's
+  alerts (`luma:agent-alert`); the shell holds them back until it does
 
 The shell (`platforms/firetv/android/`) injects the object with
 `addJavascriptInterface` and implements it as `app.luma.firetv.Shell`. App ids
@@ -133,9 +135,10 @@ renderer) as soon as it drops to a cached app. So HomeGuard keeps its own
 small connection (`AgentWatch`: a WebSocket client for the shell stream
 only, about 10 MB more in `:guard`), with the pairing the page hands over. It
 alerts once per request, and remembers which across restarts for as long as
-the request is pending. Several alerts at once show one after another. While
-Luma is in front, it passes the alert to the page, which shows the same toast
-unless the agents page already shows that agent.
+the request is pending. Several alerts at once show one after another, and an
+alert whose request ends first, say because it was answered elsewhere, is
+dropped. While Luma is in front, it passes the alert to the page, which shows
+the same toast unless the agents page already shows that agent.
 
 Force-stopping Luma also turns HomeGuard off (Android removes it from the
 enabled services); enable it again with the commands above.

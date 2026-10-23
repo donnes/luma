@@ -10,4 +10,5 @@ export {
   canAlertOverApps,
   watchAgents,
   AGENT_ALERT_EVENT,
+  listenForAgentAlerts,
 } from '@luma/bridge';

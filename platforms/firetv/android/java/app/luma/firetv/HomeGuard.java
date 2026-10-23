@@ -33,7 +33,9 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.util.ArrayDeque;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 import org.json.JSONObject;
 
 /**
@@ -65,7 +67,8 @@ import org.json.JSONObject;
  * corner, in a window that takes no focus, keys or touches, so the app
  * underneath keeps the remote and keeps playing; or, while Luma is in front,
  * through Luma's page, which shows the same toast itself. Several alerts show
- * one after another, as on the page.
+ * one after another, as on the page, and one whose request ends, say because
+ * it was answered elsewhere, leaves the screen or the queue.
  *
  * <p>Events come only from Amazon's launcher package; window content is read
  * only to find the Luma tile there. Enable it once over ADB (see
@@ -106,6 +109,8 @@ public final class HomeGuard extends AccessibilityService {
   private final Runnable hideAlert = this::hideAlert;
   private FrameLayout cover;
   private View alert;
+  /** The request of the alert on screen. */
+  private String alertRequest;
   /** Alerts waiting for the one on screen to finish. */
   private final ArrayDeque<JSONObject> nextAlerts = new ArrayDeque<>();
   private AgentWatch agents;
@@ -170,7 +175,20 @@ public final class HomeGuard extends AccessibilityService {
     states.addAction(ACTION_LUMA_HIDDEN);
     states.addAction(ACTION_WATCH_AGENTS);
     registerReceiver(lumaState, states, PERMISSION, null);
-    agents = new AgentWatch(this, this::onAgentAlert);
+    agents =
+        new AgentWatch(
+            this,
+            new AgentWatch.Listener() {
+              @Override
+              public void onAlert(JSONObject alert) {
+                onAgentAlert(alert);
+              }
+
+              @Override
+              public void onEnded(Set<String> requestIds) {
+                onAgentsEnded(requestIds);
+              }
+            });
     agents.reload();
   }
 
@@ -307,6 +325,16 @@ public final class HomeGuard extends AccessibilityService {
     }
   }
 
+  private void onAgentsEnded(Set<String> requestIds) {
+    for (Iterator<JSONObject> next = nextAlerts.iterator(); next.hasNext(); ) {
+      if (requestIds.contains(next.next().optString("requestId"))) next.remove();
+    }
+    if (alert != null && requestIds.contains(alertRequest)) {
+      main.removeCallbacks(hideAlert);
+      hideAlert();
+    }
+  }
+
   private void toPage(JSONObject alert) {
     Intent intent = new Intent(ACTION_AGENT_ALERT);
     intent.setPackage(getPackageName());
@@ -353,6 +381,7 @@ public final class HomeGuard extends AccessibilityService {
       return false;
     }
     alert = card;
+    alertRequest = json.optString("requestId");
     card.setAlpha(0);
     card.setTranslationY(-rems(0.75f));
     card.animate()

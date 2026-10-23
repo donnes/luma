@@ -25,6 +25,7 @@ import android.widget.FrameLayout;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
 
@@ -59,19 +60,24 @@ public class MainActivity extends Activity {
   private WebView webView;
   private final Shell shell = new Shell(this);
   private final Runnable reportShown = () -> HomeGuard.report(this, true);
-  /** HomeGuard's agent alerts while Luma is in front, for the page's own toast. */
+  /**
+   * HomeGuard's agent alerts while Luma is in front, for the page's own toast.
+   * HomeGuard counts an alert as shown once it's sent, so the ones that come
+   * while the page is still starting, as after the system killed Luma, wait
+   * here until the page listens for them.
+   */
   private final BroadcastReceiver agentAlerts =
       new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
           String alert = intent.getStringExtra(HomeGuard.EXTRA_ALERT);
-          if (alert != null) {
-            webView.evaluateJavascript(
-                "window.dispatchEvent(new CustomEvent('luma:agent-alert',{detail:" + alert + "}))",
-                null);
-          }
+          if (alert == null) return;
+          if (pageListening) showAgentAlert(alert);
+          else heldAlerts.add(alert);
         }
       };
+  private final ArrayList<String> heldAlerts = new ArrayList<>();
+  private boolean pageListening;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -90,6 +96,18 @@ public class MainActivity extends Activity {
     webView.loadUrl(BASE_URL + "index.html");
     registerReceiver(
         agentAlerts, new IntentFilter(HomeGuard.ACTION_AGENT_ALERT), HomeGuard.PERMISSION, null);
+  }
+
+  /** From the page, through {@link Shell#listenForAgentAlerts}. */
+  void onPageListening() {
+    pageListening = true;
+    for (String alert : heldAlerts) showAgentAlert(alert);
+    heldAlerts.clear();
+  }
+
+  private void showAgentAlert(String alert) {
+    webView.evaluateJavascript(
+        "window.dispatchEvent(new CustomEvent('luma:agent-alert',{detail:" + alert + "}))", null);
   }
 
   @Override
