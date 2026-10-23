@@ -153,10 +153,16 @@ function InboxRow({ agent, onOpen }: { agent: Agent; onOpen: (threadId: string) 
         data-focusable={`inbox-${thread.id}`}
         aria-label={`${thread.title}, ${t(statusLabels[status])}`}
         onFocus={(event) => {
-          // The first row of a group brings its heading along.
+          // The first row of a group brings its heading along. Scrolling the
+          // row last keeps it visible when the group is taller than the list.
           const row = event.currentTarget;
-          const target = row.closest('li')?.previousElementSibling ? row : row.closest('section');
-          target?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+          if (!row.closest('li')?.previousElementSibling) {
+            row
+              .closest('section')
+              ?.querySelector('h3')
+              ?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+          }
+          row.scrollIntoView({ block: 'nearest', behavior: 'instant' });
         }}
         onClick={() => onOpen(thread.id)}
       >

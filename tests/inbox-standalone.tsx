@@ -27,6 +27,13 @@ const agent = (id: string, patch: Partial<ThreadShell>): Agent => {
   return { thread, project: undefined, status: agentStatus(thread) };
 };
 
+// `?tall` adds a needs-you group taller than the list, for scrolling.
+const extra = location.search.includes('tall')
+  ? Array.from({ length: 20 }, (_, i) =>
+      agent(`ask${i}`, { pendingRuntimeRequest: { id: `q${i}`, kind: 'command', createdAt: now } }),
+    )
+  : [];
+
 const log = (entry: string) =>
   document.body.setAttribute('data-log', `${document.body.dataset.log ?? ''}${entry};`);
 
@@ -34,6 +41,7 @@ createRoot(document.getElementById('root')!).render(
   <InboxPanel
     inbox={{
       needsYou: [
+        ...extra,
         agent('approve', {
           pendingRuntimeRequest: { id: 'r1', kind: 'command', createdAt: now },
         }),
