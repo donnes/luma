@@ -41,6 +41,11 @@ public class WebAppActivity extends Activity {
   private boolean handoff;
   /** The deep link is loading; forget the pairing pages before it. */
   private boolean forgetHistory;
+  /**
+   * The T3 server Luma verified before minting the pairing code. The page stays
+   * on it: a redirect elsewhere would carry the code in the URL fragment.
+   */
+  private String origin;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -66,6 +71,7 @@ public class WebAppActivity extends Activity {
   private void load(Intent intent) {
     String url = intent.getStringExtra(EXTRA_URL);
     then = intent.getStringExtra(EXTRA_THEN);
+    origin = origin(Uri.parse(url));
     handoff = "/pair".equals(Uri.parse(url).getPath());
     webView.loadUrl(url);
   }
@@ -99,6 +105,13 @@ public class WebAppActivity extends Activity {
         });
   }
 
+  /** scheme://host:port, or "" for anything that isn't http(s). */
+  private static String origin(Uri uri) {
+    String scheme = uri.getScheme();
+    if (!"http".equals(scheme) && !"https".equals(scheme) || uri.getHost() == null) return "";
+    return scheme + "://" + uri.getHost().toLowerCase() + ":" + uri.getPort();
+  }
+
   @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
   private WebView createWebView() {
     WebView view = new WebView(this);
@@ -120,9 +133,11 @@ public class WebAppActivity extends Activity {
         new WebViewClient() {
           @Override
           public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-            String scheme = request.getUrl().getScheme();
-            // Downloads, mailto: and other apps' links have nowhere to go on the TV.
-            return !"http".equals(scheme) && !"https".equals(scheme);
+            // Also called for server redirects. Downloads, mailto: and other
+            // apps' links have nowhere to go on the TV, and other sites
+            // mustn't load with the pairing code or the TV adjustments.
+            String target = origin(request.getUrl());
+            return target.isEmpty() || request.isForMainFrame() && !target.equals(origin);
           }
 
           // Both hooks run the (idempotent) injection: the first as soon as the
