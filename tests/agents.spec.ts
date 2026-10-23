@@ -627,7 +627,7 @@ test('on Fire TV, the page alerts itself once HomeGuard is turned off', async ({
 
   // HomeGuard finds this one and records it; the page leaves it to the shell.
   pushShell(asking(6, 'thread-2', 'Second opinion on the overlay', 'r6'));
-  await expect(page.locator('.inbox-button-count')).toHaveText('2');
+  await expect(page.locator('[data-focusable="agent-thread-2"]')).toBeVisible();
   await page.evaluate(() => Object.assign(window, { __history: '["r1","r6"]' }));
 
   // Turned off while Luma's page lives on, so the page alerts again.
@@ -675,7 +675,7 @@ test('on Fire TV, an alert waits out a history the shell cannot read', async ({ 
 
   // Without its history the page can't tell what's new, so it holds off.
   pushShell(asking(6, 'thread-2', 'Second opinion on the overlay', 'r6'));
-  await expect(page.locator('.inbox-button-count')).toHaveText('2');
+  await expect(page.locator('[data-focusable="agent-thread-2"]')).toBeVisible();
   await expect(page.locator('.agent-toast')).toHaveCount(0);
 
   // Readable again: the next update alerts what it held off on.
