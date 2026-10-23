@@ -14,7 +14,7 @@ import {
   type Agent,
   type Shell,
 } from '../../../src/agents/model.ts';
-import type { ApprovalDecision, ThreadShell } from '../../../src/agents/types.ts';
+import type { ThreadShell } from '../../../src/agents/types.ts';
 import { RpcError } from '../../../src/agents/rpc.ts';
 import type { T3Session } from './t3.ts';
 
@@ -24,8 +24,12 @@ import type { T3Session } from './t3.ts';
 //
 // Thread titles, messages and requests come from coding agents and can carry
 // instructions meant for the model. So once the model has seen any of them,
-// writes wait for Donald's spoken yes, and approvals always do. The model
-// never decides that he said yes: the assistant checks his next words itself.
+// writes wait for Donald's spoken yes. The model never decides that he said
+// yes: the assistant checks his next words itself.
+//
+// Approvals can't be given by voice at all. A request's prompt is the agent's
+// reason when it gave one, not the command, so Donald could approve a command
+// he never heard. He approves in T3 Code, where he sees the command.
 
 const nullable = (type: string, description: string) => ({ type: [type, 'null'], description });
 
@@ -59,7 +63,8 @@ export const toolDefinitions = [
   {
     type: 'function',
     name: 'answer_request',
-    description: 'Answers the pending approval or question in a thread.',
+    description:
+      "Answers the pending question in a thread, or denies its pending approval. Approvals can't be given by voice.",
     parameters: {
       type: 'object',
       properties: {
@@ -68,8 +73,8 @@ export const toolDefinitions = [
           description: 'Thread id from get_status, or words from its title.',
         },
         decision: {
-          ...nullable('string', 'For approvals. Null for questions.'),
-          enum: ['accept', 'acceptForSession', 'decline', null],
+          ...nullable('string', 'decline to deny an approval. Null for questions.'),
+          enum: ['decline', null],
         },
         answers: {
           type: ['array', 'null'],
@@ -197,16 +202,16 @@ async function status(context: ToolContext): Promise<Result> {
 }
 
 /**
- * Runs a write now, or holds it for Donald's yes when it needs one or the
- * model has read thread content. One action waits at a time, so the yes
- * always answers the question he heard.
+ * Runs a write now, or holds it for Donald's yes when the model has read
+ * thread content. One action waits at a time, so the yes always answers the
+ * question he heard.
  */
 async function act(
   context: ToolContext,
-  action: PendingAction & { alwaysConfirm: boolean; result: Result },
+  action: PendingAction & { result: Result },
 ): Promise<Result> {
-  const { alwaysConfirm, result, ...pending } = action;
-  if (!alwaysConfirm && !context.sawThreads) {
+  const { result, ...pending } = action;
+  if (!context.sawThreads) {
     await context.t3.dispatch(pending.command);
     return result;
   }
@@ -226,23 +231,11 @@ async function reply(context: ToolContext, args: { thread: string; message: stri
     command: messageCommand(thread.id, message),
     question: `Send "${message}" to ${thread.title}? Say yes to confirm.`,
     done: `Sent to ${thread.title}.`,
-    alwaysConfirm: false,
     result: { sent: true, thread: thread.title },
   });
 }
 
 const loose = (text: string) => words(text).join(' ');
-
-/** Longest command an approval question reads out. */
-const MAX_SPOKEN = 100;
-
-const verbs: Record<ApprovalDecision, [ask: string, done: string]> = {
-  accept: ['Approve', 'Approved'],
-  acceptForSession: ['Allow for this session', 'Allowed for this session'],
-  acceptAlways: ['Always allow', 'Always allowed'],
-  decline: ['Deny', 'Denied'],
-  cancel: ['Cancel', 'Cancelled'],
-};
 
 async function answer(
   context: ToolContext,
@@ -256,30 +249,19 @@ async function answer(
   if (!request) return { error: `"${thread.title}" has nothing waiting for an answer.` };
 
   if (request.kind === 'approval') {
-    const option = request.options.find((candidate) => candidate.decision === args.decision);
-    if (!option)
-      return {
-        error: 'Pick one of these decisions.',
-        decisions: request.options.map((candidate) => candidate.decision),
-      };
-    // Donald approves exactly what he hears, so the command is read out as is.
-    // One that can't be is approved in T3 Code instead; denying needs no detail.
-    const command = request.detail.trim();
-    const speakable =
-      command.length > 0 && command.length <= MAX_SPOKEN && !/[\r\n`]/.test(command);
-    if (!speakable && option.decision !== 'decline')
+    if (args.decision !== 'decline')
       return {
         error:
-          'This request is too long or complex to read aloud. Tell Donald to review it in T3 Code.',
+          "Luma can't approve by voice. Tell Donald to review and approve it in T3 Code, on the TV or his computer.",
       };
-    const [ask, done] = verbs[option.decision];
-    const what = speakable ? command : `the ${request.requestKind} request`;
+    if (!request.options.some((option) => option.decision === 'decline'))
+      return { error: "This request can't be denied. Tell Donald to review it in T3 Code." };
+    const what = `the ${request.requestKind} request in ${thread.title}`;
     return act(context, {
-      command: decideCommand(thread.id, request.requestId, option.decision),
-      question: `${ask} ${what} in ${thread.title}? Say yes to confirm.`,
-      done: `${done} ${what} in ${thread.title}.`,
-      alwaysConfirm: option.decision !== 'decline',
-      result: { done: true, thread: thread.title, decision: option.decision },
+      command: decideCommand(thread.id, request.requestId, 'decline'),
+      question: `Deny ${what}? Say yes to confirm.`,
+      done: `Denied ${what}.`,
+      result: { done: true, thread: thread.title, decision: 'decline' },
     });
   }
 
@@ -319,7 +301,6 @@ async function answer(
     command: answerCommand(thread.id, request.requestId, answers),
     question: `Answer ${thread.title} with ${chosen.join(', ')}? Say yes to confirm.`,
     done: `Answered ${thread.title}.`,
-    alwaysConfirm: false,
     result: { done: true, thread: thread.title },
   });
 }

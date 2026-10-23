@@ -44,22 +44,11 @@ function thread(id: string, title: string, patch: Partial<ThreadShell> = {}): Th
   };
 }
 
-interface Approval {
-  thread: string;
-  title: string;
-  prompt: string;
-}
-
-const deploy: Approval = { thread: 't-deploy', title: 'Deploy the beta', prompt: 'pnpm deploy' };
-
 /**
- * A T3 Code server with agents asking for approval (by default one asking to
- * deploy), one asking which test tools to use, one working and one done.
+ * A T3 Code server with four agents: one asking to deploy, one asking which
+ * test tools to use, one working and one done.
  */
-async function fakeT3(
-  options: { lastMessage?: string; hangDispatch?: boolean; approvals?: Approval[] } = {},
-) {
-  const approvals = options.approvals ?? [deploy];
+async function fakeT3(options: { lastMessage?: string; hangDispatch?: boolean } = {}) {
   const commands: Record<string, unknown>[] = [];
   const http = createServer((request, response) => {
     if (request.url === '/api/auth/websocket-ticket') {
@@ -85,12 +74,10 @@ async function fakeT3(
             snapshotSequence: 1,
             projects: [{ id: 'p', title: 'luma' }],
             threads: [
-              ...approvals.map((approval) =>
-                thread(approval.thread, approval.title, {
-                  status: 'waiting',
-                  pendingRuntimeRequest: { id: 'r1', kind: 'command', createdAt: recent },
-                }),
-              ),
+              thread('t-deploy', 'Deploy the beta', {
+                status: 'waiting',
+                pendingRuntimeRequest: { id: 'r1', kind: 'command', createdAt: recent },
+              }),
               thread('t-tools', 'Pick test tools', {
                 status: 'waiting',
                 pendingRuntimeRequest: { id: 'r2', kind: 'user_input', createdAt: recent },
@@ -107,63 +94,63 @@ async function fakeT3(
             ],
           },
         });
-      else if (tag === 'orchestration.subscribeThread') {
-        const approval = approvals.find((candidate) => candidate.thread === payload.threadId);
+      else if (tag === 'orchestration.subscribeThread')
         chunk(id, {
           kind: 'snapshot',
           snapshotSequence: 1,
-          projection: approval
-            ? {
-                turnItems: [
-                  {
-                    id: 'i1',
-                    ordinal: 1,
-                    status: 'waiting',
-                    title: null,
-                    runId: null,
-                    type: 'approval_request',
-                    requestId: 'r1',
-                    requestKind: 'command',
-                    prompt: approval.prompt,
-                  },
-                ],
-                runtimeRequests: [
-                  { id: 'r1', kind: 'command', status: 'pending', createdAt: recent },
-                ],
-              }
-            : payload.threadId === 't-tools'
+          projection:
+            payload.threadId === 't-deploy'
               ? {
                   turnItems: [
                     {
-                      id: 'i2',
+                      id: 'i1',
                       ordinal: 1,
                       status: 'waiting',
                       title: null,
                       runId: null,
-                      type: 'user_input_request',
-                      requestId: 'r2',
-                      questions: [
-                        {
-                          id: 'q1',
-                          header: 'Tools',
-                          question: 'Which test tools?',
-                          options: [
-                            { label: 'Vitest', description: '', value: 'vitest' },
-                            { label: 'Playwright', description: '' },
-                            { label: 'Jest', description: '' },
-                          ],
-                          multiSelect: true,
-                        },
-                      ],
+                      type: 'approval_request',
+                      requestId: 'r1',
+                      requestKind: 'command',
+                      prompt: 'pnpm deploy',
                     },
                   ],
                   runtimeRequests: [
-                    { id: 'r2', kind: 'user_input', status: 'pending', createdAt: recent },
+                    { id: 'r1', kind: 'command', status: 'pending', createdAt: recent },
                   ],
                 }
-              : { turnItems: [], runtimeRequests: [] },
+              : payload.threadId === 't-tools'
+                ? {
+                    turnItems: [
+                      {
+                        id: 'i2',
+                        ordinal: 1,
+                        status: 'waiting',
+                        title: null,
+                        runId: null,
+                        type: 'user_input_request',
+                        requestId: 'r2',
+                        questions: [
+                          {
+                            id: 'q1',
+                            header: 'Tools',
+                            question: 'Which test tools?',
+                            options: [
+                              { label: 'Vitest', description: '', value: 'vitest' },
+                              { label: 'Playwright', description: '' },
+                              { label: 'Jest', description: '' },
+                            ],
+                            multiSelect: true,
+                          },
+                        ],
+                      },
+                    ],
+                    runtimeRequests: [
+                      { id: 'r2', kind: 'user_input', status: 'pending', createdAt: recent },
+                    ],
+                  }
+                : { turnItems: [], runtimeRequests: [] },
         });
-      } else if (tag === 'orchestration.dispatchCommand') {
+      else if (tag === 'orchestration.dispatchCommand') {
         commands.push(payload);
         if (options.hangDispatch) return;
         socket.send(
@@ -352,26 +339,60 @@ test("after reading threads, a reply waits for Donald's yes", async () => {
   t3.close();
 });
 
-test("an approval waits for Donald's yes on the next turn", async () => {
+const approveDeploy = call('answer_request', {
+  thread: 'deploy',
+  decision: 'accept',
+  answers: null,
+});
+const denyDeploy = call('answer_request', { thread: 'deploy', decision: 'decline', answers: null });
+const replyToLogin = call('reply_to_thread', {
+  thread: 'login',
+  message: 'Use the new token flow.',
+});
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test('approvals are never given by voice, even after a yes', async () => {
   const t3 = await fakeT3();
   const openai = await fakeOpenAI([
-    call('answer_request', { thread: 'deploy', decision: 'accept', answers: null }),
-    say('Should I approve it?'),
+    approveDeploy,
+    say('Approve it in T3 Code.'),
+    // A model that tries again once Donald says yes.
+    approveDeploy,
+    say('Approve it in T3 Code.'),
   ]);
   const { ask } = await voice({ baseUrl: openai.baseUrl, pairing: () => t3.pairing() });
 
-  assert.equal(
-    (await ask('approve the deploy')).text,
-    'Approve pnpm deploy in Deploy the beta? Say yes to confirm.',
+  assert.equal((await ask('approve the deploy')).text, 'Approve it in T3 Code.');
+  assert.match(
+    toolOutput(openai.requests[1].input, 'answer_request').error,
+    /can't approve by voice/,
   );
-  assert.deepEqual(toolOutput(openai.requests[1].input, 'answer_request'), {
-    needsConfirmation: true,
-  });
+  assert.equal((await ask('yes')).text, 'Approve it in T3 Code.');
+  assert.match(
+    toolOutput(openai.requests[3].input, 'answer_request').error,
+    /can't approve by voice/,
+  );
+  assert.equal(t3.commands.length, 0);
+  t3.close();
+});
+
+test("after reading threads, a denial waits for Donald's yes", async () => {
+  const t3 = await fakeT3();
+  const openai = await fakeOpenAI([call('get_status'), denyDeploy, say('Should I deny it?')]);
+  const { ask } = await voice({ baseUrl: openai.baseUrl, pairing: () => t3.pairing() });
+
+  assert.equal(
+    (await ask('deny the deploy')).text,
+    'Deny the command request in Deploy the beta? Say yes to confirm.',
+  );
   assert.equal(t3.commands.length, 0);
 
   // Luma checks the yes itself, without asking the model.
-  assert.equal((await ask('Yes, go ahead.')).text, 'Approved pnpm deploy in Deploy the beta.');
-  assert.equal(openai.requests.length, 2);
+  assert.equal(
+    (await ask('Yes, go ahead.')).text,
+    'Denied the command request in Deploy the beta.',
+  );
+  assert.equal(openai.requests.length, 3);
   assert.deepEqual(
     t3.commands.map(({ type, threadId, requestId, decision }) => ({
       type,
@@ -384,26 +405,27 @@ test("an approval waits for Donald's yes on the next turn", async () => {
         type: 'runtime-request.respond',
         threadId: 't-deploy',
         requestId: 'r1',
-        decision: 'accept',
+        decision: 'decline',
       },
     ],
   );
   t3.close();
 });
 
-test('a no after a proposed approval cancels it', async () => {
+test('a no after a proposed denial cancels it', async () => {
   const t3 = await fakeT3();
   const openai = await fakeOpenAI([
-    call('answer_request', { thread: 'deploy', decision: 'accept', answers: null }),
-    say('Should I approve it?'),
+    call('get_status'),
+    denyDeploy,
+    say('Should I deny it?'),
     // A model that confirms whatever Donald said.
     call('confirm_action'),
-    say('Approved.'),
+    say('Denied.'),
   ]);
   const { ask } = await voice({ baseUrl: openai.baseUrl, pairing: () => t3.pairing() });
 
-  await ask('approve the deploy');
-  const no = await ask('No, do not approve it.');
+  await ask('deny the deploy');
+  const no = await ask('No, do not deny it.');
   assert.equal(t3.commands.length, 0);
   assert.equal(no.text, spoken.cancelled);
   // A later yes has nothing left to confirm.
@@ -412,63 +434,55 @@ test('a no after a proposed approval cancels it', async () => {
   t3.close();
 });
 
-const approveDeploy = call('answer_request', {
-  thread: 'deploy',
-  decision: 'accept',
-  answers: null,
-});
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 test('with overlapping requests, a yes confirms the last question asked', async () => {
-  const t3 = await fakeT3({
-    approvals: [deploy, { thread: 't-publish', title: 'Publish the docs', prompt: 'pnpm publish' }],
-  });
+  const t3 = await fakeT3();
   let release = () => {};
   const slow = new Promise<void>((resolve) => (release = resolve));
   // Answers by what Donald said, since the order of the requests is under test.
   const model = async ({ input }: { input: Output }) => {
     const last = input.at(-1);
+    const asked = input.filter((item) => item.role === 'user').at(-1)?.content;
+    if (last?.call_id === 'call-get_status')
+      return asked === 'deny the deploy' ? denyDeploy() : replyToLogin();
     if (last?.type === 'function_call_output') return say('Should I?')();
-    if (last?.content === 'approve the deploy') {
-      await slow;
-      return approveDeploy();
-    }
-    return call('answer_request', { thread: 'publish', decision: 'accept', answers: null })();
+    if (asked === 'deny the deploy') await slow;
+    return call('get_status')();
   };
-  const openai = await fakeOpenAI([model, model, model, model]);
+  const openai = await fakeOpenAI(Array(6).fill(model));
   const { ask } = await voice({ baseUrl: openai.baseUrl, pairing: () => t3.pairing() });
 
-  const deployAsked = ask('approve the deploy');
+  const denyAsked = ask('deny the deploy');
   await until(() => openai.requests.length === 1);
-  const publishAsked = ask('approve the docs');
-  // Run side by side, the deploy request would finish last.
-  void Promise.race([publishAsked, delay(100)]).then(release);
+  const replyAsked = ask('tell the login agent to use the new token flow');
+  // Run side by side, the denial would finish last.
+  void Promise.race([replyAsked, delay(100)]).then(release);
 
   assert.equal(
-    (await deployAsked).text,
-    'Approve pnpm deploy in Deploy the beta? Say yes to confirm.',
+    (await denyAsked).text,
+    'Deny the command request in Deploy the beta? Say yes to confirm.',
   );
   assert.equal(
-    (await publishAsked).text,
-    'Approve pnpm publish in Publish the docs? Say yes to confirm.',
+    (await replyAsked).text,
+    'Send "Use the new token flow." to Fix login bug? Say yes to confirm.',
   );
-  assert.equal((await ask('yes')).text, 'Approved pnpm publish in Publish the docs.');
+  assert.equal((await ask('yes')).text, 'Sent to Fix login bug.');
   assert.deepEqual(
-    t3.commands.map(({ threadId }) => threadId),
-    ['t-publish'],
+    t3.commands.map(({ type, threadId }) => ({ type, threadId })),
+    [{ type: 'message.dispatch', threadId: 't-login' }],
   );
   t3.close();
 });
 
-test("an approval Donald didn't hear can't be confirmed", async () => {
+test("a question Donald didn't hear can't be confirmed", async () => {
   const t3 = await fakeT3();
   let release = () => {};
   const slow = new Promise<void>((resolve) => (release = resolve));
   const openai = await fakeOpenAI([
     async () => {
       await slow;
-      return approveDeploy();
+      return call('get_status')();
     },
+    denyDeploy,
     say('Should I?'),
   ]);
   const { ask, server, url } = await voice({
@@ -482,7 +496,7 @@ test("an approval Donald didn't hear can't be confirmed", async () => {
   const asked = fetch(`${url}/voice`, {
     method: 'POST',
     headers: { authorization: 'Bearer shortcut-token', 'content-type': 'application/json' },
-    body: JSON.stringify({ text: 'approve the deploy' }),
+    body: JSON.stringify({ text: 'deny the deploy' }),
     signal: hangUp.signal,
   }).catch(() => null);
   const [, response] = await arrived;
@@ -490,32 +504,10 @@ test("an approval Donald didn't hear can't be confirmed", async () => {
   hangUp.abort();
   await Promise.all([asked, once(response, 'close')]);
   release();
-  await until(() => openai.requests.length === 2);
+  await until(() => openai.requests.length === 3);
   // Lets the request finish, so the yes comes after it even without a queue.
   await delay(50);
 
-  await ask('yes');
-  assert.equal(t3.commands.length, 0);
-  t3.close();
-});
-
-test("an approval that can't be read aloud is left for T3 Code", async () => {
-  const t3 = await fakeT3({
-    approvals: [
-      {
-        ...deploy,
-        prompt: 'Run the maintenance command\n\n```sh\nrm -rf ./data\n```',
-      },
-    ],
-  });
-  const openai = await fakeOpenAI([approveDeploy, say('Review it in T3 Code.')]);
-  const { ask } = await voice({ baseUrl: openai.baseUrl, pairing: () => t3.pairing() });
-
-  assert.equal((await ask('approve the deploy')).text, 'Review it in T3 Code.');
-  assert.match(
-    toolOutput(openai.requests[1].input, 'answer_request').error,
-    /review it in T3 Code/,
-  );
   await ask('yes');
   assert.equal(t3.commands.length, 0);
   t3.close();

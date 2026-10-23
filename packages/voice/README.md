@@ -11,9 +11,11 @@ The service can:
 
 - Summarize your agents: what needs you, what's working, what finished or failed.
 - Reply to a thread you name, as if you typed it in T3 Code.
-- Answer a pending question, or approve or deny a pending request.
+- Answer a pending question, or deny a pending request.
 
-Approvals always wait for your yes. So do replies and answers once the assistant has read anything from your threads in the last few minutes, since an agent's message could try to steer it. Luma then reads back the exact thread and message, and acts only if your next press is a plain yes: "yes", "yeah", "yep", "sure", "confirm", "do it" or "go ahead". Anything else cancels it. The service checks the yes itself; the model can't confirm anything. Luma reads an approval's command word for word, so a command that's long, spans several lines or has code in it can only be approved in T3 Code. You can still deny it by voice. If you ask again before Luma answers, only the last question it asked can be confirmed.
+Luma can't approve requests. An approval request often carries the agent's reason instead of the command, so Luma couldn't tell you what you'd be approving. It tells you an approval is waiting and asks you to review and approve it in T3 Code, on the TV or your computer.
+
+Replies, answers and denials wait for your yes once the assistant has read anything from your threads in the last few minutes, since an agent's message could try to steer it. Luma then reads back the exact thread and message, and acts only if your next press is a plain yes: "yes", "yeah", "yep", "sure", "confirm", "do it" or "go ahead". Anything else cancels it. The service checks the yes itself, and the model can't confirm anything. If you ask again before Luma answers, only the last question it asked can be confirmed.
 
 It can't run commands, start threads or control the TV. Those requests get a spoken "I can't do that yet".
 
@@ -94,7 +96,7 @@ The service answers in plain text, errors included, so the Shortcut always has s
 
 To bind it to the Action button, open **Settings → Action Button**, swipe to **Shortcut**, and choose **Luma**.
 
-Try "What needs me?", "Tell the login thread to use the new token flow", or "Approve the deploy", then "Yes".
+Try "What needs me?", then "Tell the login thread to use the new token flow", and "Yes" when Luma reads the message back.
 
 ## Troubleshooting
 
