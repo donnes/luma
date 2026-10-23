@@ -561,11 +561,15 @@ test('a queued alert whose request was answered meanwhile never shows', async ({
   expect(await toast.count()).toBe(0);
 });
 
-test('on Fire TV, the page alerts itself once HomeGuard is turned off', async ({ page }) => {
-  await page.addInitScript(() => {
-    const w = window as typeof window & { __homeGuard: boolean; __listening: boolean };
+// The Fire TV shell with HomeGuard on. HomeGuard finds the alerts and keeps
+// the history of alerted requests, which it shares with the page.
+type FireTV = typeof window & { __homeGuard: boolean; __listening: boolean; __history: string };
+async function fireTV(page: Page, history: string[] | null = null) {
+  await page.addInitScript((history) => {
+    const w = window as FireTV;
     w.__homeGuard = true;
     w.__listening = false;
+    w.__history = JSON.stringify(history);
     Object.assign(w, {
       LumaAndroid: {
         isTV: () => true,
@@ -575,30 +579,106 @@ test('on Fire TV, the page alerts itself once HomeGuard is turned off', async ({
         canAlertOverApps: () => w.__homeGuard,
         watchAgents: () => {},
         listenForAgentAlerts: () => (w.__listening = true),
+        agentAlertHistory: () => w.__history,
+        saveAgentAlertHistory: (json: string) => (w.__history = json),
       },
     });
-  });
-  const { pushShell } = await mockT3(page);
+  }, history);
+}
+
+async function pairOnFireTV(page: Page) {
   await page.goto('/');
   await pair(page);
   await expect(
     page.getByRole('heading', { name: 'Browser tests for the Agents tile' }),
   ).toBeVisible();
   // The shell holds its alerts back until the page listens.
-  await expect
-    .poll(() =>
-      page.evaluate(() => (window as typeof window & { __listening: boolean }).__listening),
-    )
-    .toBe(true);
+  await expect.poll(() => page.evaluate(() => (window as FireTV).__listening)).toBe(true);
+}
+
+/** What MainActivity runs for HomeGuard's events while Luma is in front. */
+const fromHomeGuard = (page: Page, event: string, detail: unknown) =>
+  page.evaluate(([event, detail]) => window.dispatchEvent(new CustomEvent(event, { detail })), [
+    event,
+    detail,
+  ] as const);
+const homeGuardAlert = (requestId: string, threadId: string, title: string) => ({
+  requestId,
+  threadId,
+  headline: 'Needs you · asked a question',
+  title,
+  detail: 'luma',
+  source: 'workstation',
+});
+
+test('on Fire TV, the page alerts itself once HomeGuard is turned off', async ({ page }) => {
+  await fireTV(page, ['r1']);
+  const { pushShell } = await mockT3(page);
+  await pairOnFireTV(page);
   const toast = page.locator('.agent-toast');
 
-  // HomeGuard finds this one; the page leaves it to the shell.
+  // HomeGuard finds this one and records it; the page leaves it to the shell.
   pushShell(asking(6, 'thread-2', 'Second opinion on the overlay', 'r6'));
   await expect(page.locator('.inbox-button-count')).toHaveText('2');
+  await page.evaluate(() => Object.assign(window, { __history: '["r1","r6"]' }));
 
   // Turned off while Luma's page lives on, so the page alerts again.
   await page.evaluate(() => Object.assign(window, { __homeGuard: false }));
   pushShell(asking(7, 'thread-3', 'Pick a name for the release', 'r7'));
   // It's the first toast: the one HomeGuard took would have come before it.
   await expect(toast.locator('strong')).toHaveText('Pick a name for the release');
+  // And the history it leaves HomeGuard for when it comes back has it.
+  expect(JSON.parse(await page.evaluate(() => (window as FireTV).__history))).toEqual([
+    'r1',
+    'r6',
+    'r7',
+  ]);
+});
+
+test('on Fire TV, a queued alert leaves once HomeGuard sees its request end', async ({ page }) => {
+  await fireTV(page, ['r1']);
+  await mockT3(page);
+  await pairOnFireTV(page);
+  const toast = page.locator('.agent-toast');
+
+  // HomeGuard found both, and the page's own connection never saw r7 pending.
+  await fromHomeGuard(
+    page,
+    'luma:agent-alert',
+    homeGuardAlert('r6', 'thread-2', 'Second opinion on the overlay'),
+  );
+  await fromHomeGuard(
+    page,
+    'luma:agent-alert',
+    homeGuardAlert('r7', 'thread-3', 'Pick a name for the release'),
+  );
+  await expect(toast.locator('strong')).toHaveText('Second opinion on the overlay');
+  // Answered elsewhere while the first alert is on screen.
+  await fromHomeGuard(page, 'luma:agent-alerts-ended', ['r7']);
+  await expect(toast.filter({ hasText: 'Second opinion on the overlay' })).toHaveCount(0, {
+    timeout: 8000,
+  });
+  expect(await toast.count()).toBe(0);
+});
+
+test('on Fire TV, an alert passed on twice shows once, and the next one follows', async ({
+  page,
+}) => {
+  await fireTV(page, ['r1']);
+  await mockT3(page);
+  await pairOnFireTV(page);
+  const toast = page.locator('.agent-toast');
+
+  const first = homeGuardAlert('r6', 'thread-2', 'Second opinion on the overlay');
+  await fromHomeGuard(page, 'luma:agent-alert', first);
+  await fromHomeGuard(page, 'luma:agent-alert', first);
+  await fromHomeGuard(
+    page,
+    'luma:agent-alert',
+    homeGuardAlert('r7', 'thread-3', 'Pick a name for the release'),
+  );
+  await expect(toast.locator('strong')).toHaveText('Second opinion on the overlay');
+  await expect(toast.locator('strong')).toHaveText('Pick a name for the release', {
+    timeout: 8000,
+  });
 });

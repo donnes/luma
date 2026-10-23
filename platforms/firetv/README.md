@@ -17,7 +17,11 @@ a synchronous JSON call:
   and the alert's words as JSON; an empty string once unpaired. The shell
   saves it even while HomeGuard is off
 - `listenForAgentAlerts(): void` — the page now listens for HomeGuard's
-  alerts (`luma:agent-alert`); the shell holds them back until it does
+  alerts (`luma:agent-alert`) and the requests that ended since
+  (`luma:agent-alerts-ended`); the shell holds them back until it does
+- `agentAlertHistory(): string` and `saveAgentAlertHistory(json: string): void`
+  — the ids of the requests already alerted about, as a JSON array (`null`
+  before any), shared with HomeGuard
 
 The shell (`platforms/firetv/android/`) injects the object with
 `addJavascriptInterface` and implements it as `app.luma.firetv.Shell`. App ids
@@ -138,7 +142,14 @@ alerts once per request, and remembers which across restarts for as long as
 the request is pending. Several alerts at once show one after another, and an
 alert whose request ends first, say because it was answered elsewhere, is
 dropped. While Luma is in front, it passes the alert to the page, which shows
-the same toast unless the agents page already shows that agent.
+the same toast unless the agents page already shows that agent, and it tells
+the page which requests ended so their queued toasts go too. When HomeGuard
+starts, it asks MainActivity whether Luma is already in front.
+
+While HomeGuard is on, it alone decides what's new; while it's off, the page
+does, as on webOS and Tizen. Both keep the same history of alerted requests
+(`files/agent-alerts-seen.json`), so turning HomeGuard on or off doesn't
+announce a request again that the other one already did.
 
 Force-stopping Luma also turns HomeGuard off (Android removes it from the
 enabled services); enable it again with the commands above.

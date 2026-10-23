@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { AGENT_ALERT_EVENT, canAlertOverApps, listenForAgentAlerts, watchAgents } from '../bridge';
+import {
+  AGENT_ALERT_EVENT,
+  AGENT_ALERTS_ENDED_EVENT,
+  canAlertOverApps,
+  listenForAgentAlerts,
+  watchAgents,
+} from '../bridge';
 import { useTranslation } from '../i18n';
 import {
   agentAlert,
   alertHeadline,
   loadSeen,
-  pendingRequests,
   saveSeen,
   takeAlerts,
   type AgentAlert,
@@ -44,36 +49,48 @@ export function useAgentsLifecycle() {
   }, []);
 }
 
+// Keys queue entries apart, so each alert's toast starts over.
+let entries = 0;
+
 /**
- * The alert to show now and `done` to move on: one for each request that
- * newly needs you while Luma is on screen, in turn. On Fire TV with
- * HomeGuard, the shell's own connection finds them, so it also alerts over
- * other apps. An alert leaves the queue once its request ends or the agents
- * page shows its agent.
+ * The alert to show now, with a key of its own, and `done` to move on: one
+ * for each request that newly needs you while Luma is on screen, in turn. On
+ * Fire TV with HomeGuard, the shell's own connection decides alone what's new
+ * and what ended, so it also alerts over other apps; the page shows what the
+ * shell sends it. An alert leaves the queue once its request ends or the
+ * agents page shows its agent.
  */
 export function useAgentAlerts() {
   const { t } = useTranslation();
-  const [queue, setQueue] = useState<AgentAlert[]>([]);
+  const [queue, setQueue] = useState<{ key: number; alert: AgentAlert }[]>([]);
   useEffect(() => {
     const connection = agentsConnection();
-    let seen = loadSeen();
     let shell: Shell | undefined;
     let pairing: Pairing | null | undefined;
-    // Requests this page's connection has seen pending, and the ones it has
-    // seen end since. An alert from the shell can arrive before this
-    // connection hears of its request, so only an ended request drops one.
-    let pending = new Set<string>();
-    const ended = new Set<string>();
-    const wanted = (alert: AgentAlert) =>
-      !ended.has(alert.requestId) &&
-      // The agents page already shows the agent it follows.
-      connection.getState().detail?.threadId !== alert.threadId;
-    const enqueue = (alerts: AgentAlert[]) =>
+    // The history while this page finds alerts itself; undefined while
+    // HomeGuard does and keeps it.
+    let seen: string[] | null | undefined;
+    const sync = (alerts: AgentAlert[], ended: Iterable<string> = []) => {
+      const gone = new Set(ended);
       setQueue((queued) => {
-        const next = [...queued, ...alerts].filter(wanted);
+        // The agents page already shows the agent it follows.
+        const shown = connection.getState().detail?.threadId;
+        const next = queued.filter(
+          ({ alert }) => !gone.has(alert.requestId) && alert.threadId !== shown,
+        );
+        // One entry per request, even if the shell sends it twice.
+        const requests = new Set(next.map(({ alert }) => alert.requestId));
+        let added = false;
+        for (const alert of alerts) {
+          if (requests.has(alert.requestId) || alert.threadId === shown) continue;
+          requests.add(alert.requestId);
+          next.push({ key: ++entries, alert });
+          added = true;
+        }
         // Unchanged, the queue keeps its identity and nothing renders.
-        return next.length === queued.length && !alerts.length ? queued : next;
+        return added || next.length < queued.length ? next : queued;
       });
+    };
     const update = () => {
       const state = connection.getState();
       // Handed over even while HomeGuard is off: the shell keeps it for when
@@ -92,36 +109,45 @@ export function useAgentAlerts() {
         );
       }
       let alerts: AgentAlert[] = [];
+      let ended: string[] = [];
       if (state.shell !== shell && state.shell.ready) {
         shell = state.shell;
-        const now = pendingRequests(shell);
-        for (const id of pending) if (!now.has(id)) ended.add(id);
-        pending = now;
-        // Recorded even when the shell alerts, so turning HomeGuard off later
-        // doesn't announce what it already did.
-        const taken = takeAlerts(shell, seen);
-        if (taken.seen !== seen) saveSeen(taken.seen);
-        seen = taken.seen;
-        // This connection only runs while Luma is on screen. HomeGuard can be
-        // turned on or off meanwhile, so who alerts is decided each time.
-        if (taken.alerts.length && !document.hidden && !canAlertOverApps())
-          alerts = taken.alerts.map((agent) => agentAlert(agent, t, state.pairing?.label ?? ''));
+        // HomeGuard can be turned on or off while the page lives on, so who
+        // alerts is decided each time.
+        if (canAlertOverApps()) seen = undefined;
+        else {
+          // HomeGuard may have kept the history until now.
+          const before = seen === undefined ? loadSeen() : seen;
+          const taken = takeAlerts(shell, before);
+          if (taken.seen !== before) saveSeen(taken.seen);
+          seen = taken.seen;
+          const kept = new Set(seen);
+          ended = before?.filter((id) => !kept.has(id)) ?? [];
+          // This connection only runs while Luma is on screen.
+          if (!document.hidden)
+            alerts = taken.alerts.map((agent) => agentAlert(agent, t, state.pairing?.label ?? ''));
+        }
       }
       // Also runs when the agents page opens an agent, whose alerts then leave.
-      enqueue(alerts);
+      sync(alerts, ended);
     };
     const show = (event: Event) => {
-      if (event instanceof CustomEvent) enqueue([event.detail]);
+      if (event instanceof CustomEvent) sync([event.detail]);
+    };
+    const end = (event: Event) => {
+      if (event instanceof CustomEvent) sync([], event.detail);
     };
     update();
     const unsubscribe = connection.subscribe(update);
     window.addEventListener(AGENT_ALERT_EVENT, show);
+    window.addEventListener(AGENT_ALERTS_ENDED_EVENT, end);
     listenForAgentAlerts();
     return () => {
       unsubscribe();
       window.removeEventListener(AGENT_ALERT_EVENT, show);
+      window.removeEventListener(AGENT_ALERTS_ENDED_EVENT, end);
     };
   }, [t]);
   const done = useCallback(() => setQueue((queued) => queued.slice(1)), []);
-  return { alert: queue[0], done };
+  return { toast: queue[0], done };
 }

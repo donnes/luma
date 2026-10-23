@@ -14,7 +14,10 @@ export {
   canAlertOverApps,
   watchAgents,
   AGENT_ALERT_EVENT,
+  AGENT_ALERTS_ENDED_EVENT,
   listenForAgentAlerts,
+  agentAlertHistory,
+  saveAgentAlertHistory,
 } from './android';
 export type { AgentWatch } from './android';
 

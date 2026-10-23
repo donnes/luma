@@ -33,6 +33,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
@@ -60,15 +61,18 @@ import org.json.JSONObject;
  * <p>The service runs in its own small process (see the manifest): Fire TV
  * sticks are short on memory, and the low-memory killer would otherwise take
  * it down together with Luma's WebView. MainActivity reports when it is in
- * front through a signature-protected broadcast.
+ * front through a signature-protected broadcast, and again when the service
+ * starts and asks, since it may start while Luma is already in front.
  *
  * <p>It also watches the paired T3 Code server ({@link AgentWatch}) and alerts
  * when an agent newly needs you: over another app as a toast in the top-right
  * corner, in a window that takes no focus, keys or touches, so the app
  * underneath keeps the remote and keeps playing; or, while Luma is in front,
- * through Luma's page, which shows the same toast itself. Several alerts show
- * one after another, as on the page, and one whose request ends, say because
- * it was answered elsewhere, leaves the screen or the queue.
+ * through Luma's page, which shows the same toast itself. AgentWatch alone
+ * decides what's new and what ended while the service runs; the page only
+ * shows what it's sent. Several alerts show one after another, as on the
+ * page, and one whose request ends, say because it was answered elsewhere,
+ * leaves the screen or the queue, here or on the page.
  *
  * <p>Events come only from Amazon's launcher package; window content is read
  * only to find the Luma tile there. Enable it once over ADB (see
@@ -84,9 +88,14 @@ public final class HomeGuard extends AccessibilityService {
   private static final String ACTION_LUMA_SHOWN = "app.luma.firetv.LUMA_SHOWN";
   private static final String ACTION_LUMA_HIDDEN = "app.luma.firetv.LUMA_HIDDEN";
   private static final String ACTION_WATCH_AGENTS = "app.luma.firetv.WATCH_AGENTS";
+  /** To MainActivity: report whether Luma is in front. */
+  static final String ACTION_REPORT_LUMA = "app.luma.firetv.REPORT_LUMA";
   /** To MainActivity, while Luma is in front. */
   static final String ACTION_AGENT_ALERT = "app.luma.firetv.AGENT_ALERT";
   static final String EXTRA_ALERT = "alert";
+  /** To MainActivity, whatever is in front, so the page's queue drops them too. */
+  static final String ACTION_AGENTS_ENDED = "app.luma.firetv.AGENTS_ENDED";
+  static final String EXTRA_REQUESTS = "requests";
   static final String PERMISSION = "com.luma.launcher.permission.HOME_GUARD";
 
   /** Longer than the app-switch delay; never leave the remote dead if Luma fails to start. */
@@ -175,6 +184,11 @@ public final class HomeGuard extends AccessibilityService {
     states.addAction(ACTION_LUMA_HIDDEN);
     states.addAction(ACTION_WATCH_AGENTS);
     registerReceiver(lumaState, states, PERMISSION, null);
+    // Restarted while Luma is in front, the service would otherwise draw its
+    // toasts over Luma until Luma next resumes. No answer means no Luma.
+    Intent ask = new Intent(ACTION_REPORT_LUMA);
+    ask.setPackage(getPackageName());
+    sendBroadcast(ask, PERMISSION);
     agents =
         new AgentWatch(
             this,
@@ -333,6 +347,10 @@ public final class HomeGuard extends AccessibilityService {
       main.removeCallbacks(hideAlert);
       hideAlert();
     }
+    Intent intent = new Intent(ACTION_AGENTS_ENDED);
+    intent.setPackage(getPackageName());
+    intent.putStringArrayListExtra(EXTRA_REQUESTS, new ArrayList<>(requestIds));
+    sendBroadcast(intent, PERMISSION);
   }
 
   private void toPage(JSONObject alert) {

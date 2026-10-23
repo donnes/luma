@@ -14,6 +14,8 @@ interface LumaShell {
   canAlertOverApps?(): boolean;
   watchAgents?(config: string): void;
   listenForAgentAlerts?(): void;
+  agentAlertHistory?(): string;
+  saveAgentAlertHistory?(json: string): void;
 }
 
 const shell = (): LumaShell | undefined =>
@@ -78,8 +80,9 @@ export function openWebApp(url: string, then = ''): void {
 
 // Fire TV: with HomeGuard enabled, the shell keeps its own connection to the
 // paired T3 Code server, since the low-memory killer soon takes this page
-// once another app is in front. It alerts over that app when an agent newly
-// needs you and, while Luma is in front, sends the alert here as an event.
+// once another app is in front. It then decides alone what newly needs you:
+// it alerts over that app and, while Luma is in front, sends the alert here
+// as an event, followed by the requests that ended since.
 export const canAlertOverApps = (): boolean => shell()?.canAlertOverApps?.() === true;
 
 export interface AgentWatch {
@@ -106,7 +109,25 @@ export function watchAgents(config: AgentWatch | null): void {
 /** The shell's alerts while Luma is in front; `detail` is an alert like AgentToast's. */
 export const AGENT_ALERT_EVENT = 'luma:agent-alert';
 
+/** Requests the shell alerted about that have ended; `detail` is their ids. */
+export const AGENT_ALERTS_ENDED_EVENT = 'luma:agent-alerts-ended';
+
 /** Tells the shell the page listens for AGENT_ALERT_EVENT; it holds alerts back until then. */
 export function listenForAgentAlerts(): void {
   shell()?.listenForAgentAlerts?.();
+}
+
+/**
+ * The ids of the requests already alerted about, as JSON, from the history
+ * HomeGuard and the page share on Fire TV, so neither announces what the
+ * other did; undefined without such a shell.
+ */
+export const agentAlertHistory = (): string | undefined => shell()?.agentAlertHistory?.();
+
+/** Saves the shared history; false without such a shell. */
+export function saveAgentAlertHistory(json: string): boolean {
+  const host = shell();
+  if (!host?.saveAgentAlertHistory) return false;
+  host.saveAgentAlertHistory(json);
+  return true;
 }

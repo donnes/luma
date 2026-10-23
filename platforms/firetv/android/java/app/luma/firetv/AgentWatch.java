@@ -1,12 +1,10 @@
 package app.luma.firetv;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
-import android.text.TextUtils;
 import android.util.Base64;
 import android.util.Log;
 import java.io.ByteArrayOutputStream;
@@ -27,7 +25,6 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -53,9 +50,10 @@ import org.json.JSONTokener;
  * subscribes only to the shell stream, and only to notice an agent that newly
  * needs you: a pending request it hasn't alerted about before, the rule of
  * src/agents/alerts.ts. Alerted request ids are kept across restarts while
- * their request is pending. The page hands over the pairing and the alert's
- * words in the user's language, saved by {@link #save} in the app's files so
- * that a change made while HomeGuard is off still reaches it.
+ * their request is pending, in a history the page shares while HomeGuard is
+ * off (see {@link #saveSeen}). The page hands over the pairing and the
+ * alert's words in the user's language, saved by {@link #save} in the app's
+ * files so that a change made while HomeGuard is off still reaches it.
  */
 final class AgentWatch {
 
@@ -71,9 +69,8 @@ final class AgentWatch {
   }
 
   private static final String TAG = "luma";
-  private static final String PREFS = "agent-watch";
   private static final String CONFIG_FILE = "agent-watch.json";
-  private static final String KEY_SEEN = "seen";
+  private static final String SEEN_FILE = "agent-alerts-seen.json";
 
   private static final int CONNECT_MS = 2500;
   /** PROBE_MS in src/agents/connection.ts. */
@@ -89,7 +86,6 @@ final class AgentWatch {
 
   private final Handler main = new Handler(Looper.getMainLooper());
   private final Context context;
-  private final SharedPreferences prefs;
   private final Listener listener;
   private volatile Thread thread;
   private volatile Socket socket;
@@ -98,7 +94,6 @@ final class AgentWatch {
 
   AgentWatch(Context context, Listener listener) {
     this.context = context;
-    this.prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     this.listener = listener;
   }
 
@@ -108,36 +103,72 @@ final class AgentWatch {
    * {@code asked} and {@code approval}, or an empty string once Luma is
    * unpaired. Saved whether HomeGuard runs or not; {@link #reload} picks it up.
    *
-   * <p>HomeGuard's process may read the file at any moment, and a lock here
-   * covers only this process. So the new pairing goes to a temporary file
-   * first and is renamed over the old one, which is atomic: a reader gets the
-   * old pairing or the new one, whole, and can't disturb the write, as
-   * AtomicFile's reader could by restoring its backup.
+   * <p>HomeGuard's process may read the file at any moment; see {@link
+   * #write}.
    */
   static synchronized void save(Context context, String config) {
-    File file = new File(context.getFilesDir(), CONFIG_FILE);
     if (config == null || config.isEmpty()) {
-      file.delete();
-      return;
+      new File(context.getFilesDir(), CONFIG_FILE).delete();
+    } else {
+      write(context, CONFIG_FILE, config);
     }
-    File temporary = new File(context.getFilesDir(), CONFIG_FILE + ".tmp");
+  }
+
+  /**
+   * The ids of the requests already alerted about and still pending, as a
+   * JSON array, or {@code null} before any history. While HomeGuard is on,
+   * this watch keeps it; while it's off, Luma's page does, through the shell.
+   * So switching HomeGuard on or off doesn't announce again what the other
+   * side did.
+   */
+  static String loadSeen(Context context) {
+    String seen = read(context, SEEN_FILE);
+    return seen == null ? "null" : seen;
+  }
+
+  static void saveSeen(Context context, String json) {
+    write(context, SEEN_FILE, json);
+  }
+
+  /**
+   * Replaces a file that the other process may read at any moment; a lock
+   * here would cover only this process. The content goes to a temporary file
+   * first and is renamed over the old one, which is atomic: a reader gets the
+   * old content or the new one, whole, and can't disturb the write, as
+   * AtomicFile's reader could by restoring its backup.
+   */
+  private static synchronized void write(Context context, String name, String content) {
+    File file = new File(context.getFilesDir(), name);
+    File temporary = new File(context.getFilesDir(), name + ".tmp");
     try (FileOutputStream out = new FileOutputStream(temporary)) {
-      out.write(config.getBytes(StandardCharsets.UTF_8));
+      out.write(content.getBytes(StandardCharsets.UTF_8));
       out.getFD().sync();
     } catch (IOException e) {
       temporary.delete();
-      Log.w(TAG, "Saving the agent watch failed", e);
+      Log.w(TAG, "Saving " + name + " failed", e);
       return;
     }
     if (!temporary.renameTo(file)) {
       temporary.delete();
-      Log.w(TAG, "Saving the agent watch failed: rename refused");
+      Log.w(TAG, "Saving " + name + " failed: rename refused");
+    }
+  }
+
+  /** The file's content, or null if there is none. */
+  private static String read(Context context, String name) {
+    try (InputStream in = new FileInputStream(new File(context.getFilesDir(), name))) {
+      return readAll(in);
+    } catch (FileNotFoundException e) {
+      return null;
+    } catch (IOException e) {
+      Log.w(TAG, "Reading " + name + " failed", e);
+      return null;
     }
   }
 
   /** Watches with the saved pairing, if it changed or the watch isn't running yet. */
   void reload() {
-    String config = load();
+    String config = read(context, CONFIG_FILE);
     if (config == null) {
       stop();
     } else if (!config.equals(watching)) {
@@ -149,17 +180,6 @@ final class AgentWatch {
     watching = null;
     thread = null;
     closeSocket();
-  }
-
-  private String load() {
-    try (InputStream in = new FileInputStream(new File(context.getFilesDir(), CONFIG_FILE))) {
-      return readAll(in);
-    } catch (FileNotFoundException e) {
-      return null;
-    } catch (IOException e) {
-      Log.w(TAG, "Reading the agent watch failed", e);
-      return null;
-    }
   }
 
   private void watch(String json) {
@@ -277,6 +297,8 @@ final class AgentWatch {
               .put("payload", new JSONObject().put("requestCompletionMarker", true))
               .put("headers", new JSONArray()));
       Threads threads = new Threads(config);
+      // Read again for every connection: the page may have kept it meanwhile.
+      History history = new History(loadSeen(context));
       long heard = SystemClock.elapsedRealtime();
       long pinged = heard;
       while (current()) {
@@ -291,7 +313,7 @@ final class AgentWatch {
           send(out, new JSONObject().put("_tag", "Ping"));
           pinged = SystemClock.elapsedRealtime();
         }
-        if (message != null) receive(message, out, threads);
+        if (message != null) receive(message, out, threads, history);
       }
     } finally {
       if (socket == opened) closeSocket();
@@ -321,7 +343,7 @@ final class AgentWatch {
     }
   }
 
-  private void receive(String message, OutputStream out, Threads threads)
+  private void receive(String message, OutputStream out, Threads threads, History history)
       throws IOException, JSONException {
     Object parsed = new JSONTokener(message).nextValue();
     JSONArray messages =
@@ -338,7 +360,7 @@ final class AgentWatch {
           JSONObject shellItem = values.optJSONObject(value);
           if (shellItem == null) continue;
           List<JSONObject> waiting = threads.apply(shellItem);
-          if (threads.ready) alert(waiting, threads.pending());
+          if (threads.ready) alert(history, waiting, threads.pending());
         }
       } else if ("Exit".equals(tag) || "Defect".equals(tag)) {
         throw new IOException("stream ended: " + tag);
@@ -354,10 +376,9 @@ final class AgentWatch {
    * The history keeps only requests still pending, like takeAlerts(); the
    * ones that leave it are reported, so that their alerts don't show late.
    */
-  private void alert(List<JSONObject> waiting, HashSet<String> pending) {
-    String saved = prefs.getString(KEY_SEEN, null);
-    LinkedHashSet<String> seen = new LinkedHashSet<>();
-    if (saved != null && !saved.isEmpty()) seen.addAll(Arrays.asList(saved.split("\n")));
+  private void alert(History history, List<JSONObject> waiting, HashSet<String> pending) {
+    boolean first = history.seen == null;
+    LinkedHashSet<String> seen = first ? new LinkedHashSet<>() : history.seen;
     HashSet<String> ended = new HashSet<>(seen);
     ended.removeAll(pending);
     seen.removeAll(ended);
@@ -366,11 +387,30 @@ final class AgentWatch {
     for (JSONObject alert : waiting) {
       if (seen.add(alert.optString("requestId"))) fresh.add(alert);
     }
-    if (ended.isEmpty() && fresh.isEmpty() && saved != null) return;
-    prefs.edit().putString(KEY_SEEN, TextUtils.join("\n", seen)).apply();
-    if (saved == null) return;
+    if (ended.isEmpty() && fresh.isEmpty() && !first) return;
+    history.seen = seen;
+    saveSeen(context, new JSONArray(seen).toString());
+    if (first) return;
     for (JSONObject alert : fresh) {
       main.post(() -> listener.onAlert(alert));
+    }
+  }
+
+  /** The shared history as one connection keeps it; null before any. */
+  private static final class History {
+    LinkedHashSet<String> seen;
+
+    History(String json) {
+      try {
+        Object value = new JSONTokener(json).nextValue();
+        if (!(value instanceof JSONArray)) return; // "null" before any history.
+        JSONArray ids = (JSONArray) value;
+        LinkedHashSet<String> read = new LinkedHashSet<>();
+        for (int index = 0; index < ids.length(); index++) read.add(ids.getString(index));
+        seen = read;
+      } catch (JSONException e) {
+        Log.w(TAG, "Ignoring an unreadable alert history", e);
+      }
     }
   }
 

@@ -149,6 +149,17 @@ public final class Shell {
     main.post(activity::onPageListening);
   }
 
+  /** The alert history the page shares with HomeGuard; see {@link AgentWatch#loadSeen}. */
+  @JavascriptInterface
+  public String agentAlertHistory() {
+    return AgentWatch.loadSeen(activity);
+  }
+
+  @JavascriptInterface
+  public void saveAgentAlertHistory(String json) {
+    if (json != null) AgentWatch.saveSeen(activity, json);
+  }
+
   @JavascriptInterface
   public synchronized void exit() {
     // With HomeGuard on, parking the task would only flash Amazon's home

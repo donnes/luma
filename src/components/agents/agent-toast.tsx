@@ -9,7 +9,8 @@ export const AGENT_TOAST_MS = 6000;
 // An agent that newly needs you, top right for a few seconds. It never takes
 // focus or keys, so whatever is on screen keeps the remote, and it owns its
 // styles like the inbox, so it renders the same outside Luma's pages. Key it
-// by request so a new alert starts over; `onDone` should keep its identity.
+// by queue entry so each alert starts its timer and animation over, even one
+// for the same request as the last; `onDone` should keep its identity.
 export function AgentToast({ alert, onDone }: { alert: AgentAlert; onDone: () => void }) {
   useEffect(() => {
     const timer = setTimeout(onDone, AGENT_TOAST_MS);

@@ -1,3 +1,4 @@
+import { agentAlertHistory, saveAgentAlertHistory } from '../bridge';
 import type { MessageKey } from '../i18n';
 import { inboxGroups, type Agent, type Shell } from './model';
 
@@ -30,23 +31,18 @@ export const agentAlert = (
   source,
 });
 
-/** The ids of every request pending in `shell`, whether it needs you or not. */
-export function pendingRequests(shell: Shell) {
-  const pending = new Set<string>();
-  for (const thread of shell.threads.values()) {
-    if (thread.pendingRuntimeRequest) pending.add(thread.pendingRuntimeRequest.id);
-  }
-  return pending;
-}
-
 // Requests Luma has already alerted about and that are still pending, kept
 // across restarts so that a reconnect's snapshot doesn't announce them again.
-// A request leaves once it ends; asking again makes a new request id.
+// A request leaves once it ends; asking again makes a new request id. On Fire
+// TV the shell keeps it, shared with HomeGuard, so that switching HomeGuard on
+// or off doesn't announce again what the other side did.
 const STORAGE_KEY = 'luma.agentAlerts.v1';
 
 export function loadSeen(): string[] | null {
   try {
-    const seen: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
+    const seen: unknown = JSON.parse(
+      agentAlertHistory() ?? localStorage.getItem(STORAGE_KEY) ?? 'null',
+    );
     return Array.isArray(seen) ? seen.filter((id) => typeof id === 'string') : null;
   } catch {
     return null;
@@ -54,8 +50,9 @@ export function loadSeen(): string[] | null {
 }
 
 export function saveSeen(seen: string[]) {
+  const json = JSON.stringify(seen);
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(seen));
+    if (!saveAgentAlertHistory(json)) localStorage.setItem(STORAGE_KEY, json);
   } catch {
     /* Without storage, a restart may alert once more. */
   }
@@ -75,7 +72,10 @@ export function takeAlerts(shell: Shell, seen: string[] | null) {
     const id = agent.thread.pendingRuntimeRequest?.id;
     return id === undefined || known.has(id) ? [] : [{ agent, id }];
   });
-  const pending = pendingRequests(shell);
+  const pending = new Set<string>();
+  for (const thread of shell.threads.values()) {
+    if (thread.pendingRuntimeRequest) pending.add(thread.pendingRuntimeRequest.id);
+  }
   const kept = (seen ?? []).filter((id) => pending.has(id));
   // Unchanged history keeps its identity, so callers can skip saving it.
   if (seen && !fresh.length && kept.length === seen.length) return { alerts: [] as Agent[], seen };
