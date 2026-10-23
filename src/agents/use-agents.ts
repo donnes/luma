@@ -58,10 +58,13 @@ export function useAgentAlerts(onAlert: (alert: AgentAlert) => void) {
     let pairing: Pairing | null | undefined;
     const update = () => {
       const state = connection.getState();
-      if (fromShell && state.pairing !== pairing) {
+      // Handed over even while HomeGuard is off: the shell keeps it for when
+      // HomeGuard comes on, and an old pairing must not outlive an unpair.
+      if (state.pairing !== pairing) {
         pairing = state.pairing;
         watchAgents(
           pairing && {
+            environmentId: pairing.environmentId,
             routes: pairing.routes.map((route) => route.url),
             token: pairing.token,
             source: pairing.label,

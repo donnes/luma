@@ -7,11 +7,15 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.text.TextUtils;
+import android.util.AtomicFile;
 import android.util.Base64;
 import android.util.Log;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.EOFException;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -25,8 +29,12 @@ import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLPeerUnverifiedException;
+import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -43,8 +51,10 @@ import org.json.JSONTokener;
  * <p>It speaks the same WebSocket API as the page (src/agents/rpc.ts), but
  * subscribes only to the shell stream, and only to notice an agent that newly
  * needs you: a pending request it hasn't alerted about before, the rule of
- * src/agents/alerts.ts. Alerted request ids are kept across restarts. The page
- * hands over the pairing and the alert's words in the user's language.
+ * src/agents/alerts.ts. Alerted request ids are kept across restarts while
+ * their request is pending. The page hands over the pairing and the alert's
+ * words in the user's language, saved by {@link #save} in the app's files so
+ * that a change made while HomeGuard is off still reaches it.
  */
 final class AgentWatch {
 
@@ -58,12 +68,12 @@ final class AgentWatch {
 
   private static final String TAG = "luma";
   private static final String PREFS = "agent-watch";
-  private static final String KEY_CONFIG = "config";
+  private static final String CONFIG_FILE = "agent-watch.json";
   private static final String KEY_SEEN = "seen";
-  /** Request ids are never reused; the newest few hundred cover everything still pending. */
-  private static final int REMEMBERED = 200;
 
   private static final int CONNECT_MS = 2500;
+  /** PROBE_MS in src/agents/connection.ts. */
+  private static final int PROBE_MS = 2500;
   private static final int HTTP_MS = 5000;
   /** The page's RpcSocket pings this often and gives up after this much silence. */
   private static final int PING_MS = 5000;
@@ -74,42 +84,70 @@ final class AgentWatch {
   private static final class Expired extends Exception {}
 
   private final Handler main = new Handler(Looper.getMainLooper());
+  private final Context context;
   private final SharedPreferences prefs;
   private final Listener listener;
   private volatile Thread thread;
   private volatile Socket socket;
+  /** The config being watched with; null when stopped. */
+  private String watching;
 
   AgentWatch(Context context, Listener listener) {
+    this.context = context;
     this.prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     this.listener = listener;
   }
 
-  /** Watches with the pairing saved last time, if there is one. */
-  void start() {
-    String config = prefs.getString(KEY_CONFIG, null);
-    if (config != null) {
-      watch(config);
+  /**
+   * From the page, in Luma's main process: JSON with {@code environmentId},
+   * {@code routes} (server origins, best first), {@code token}, {@code source},
+   * {@code asked} and {@code approval}, or an empty string once Luma is
+   * unpaired. Saved whether HomeGuard runs or not; {@link #reload} picks it up.
+   */
+  static synchronized void save(Context context, String config) {
+    AtomicFile file = new AtomicFile(new File(context.getFilesDir(), CONFIG_FILE));
+    if (config == null || config.isEmpty()) {
+      file.delete();
+      return;
+    }
+    FileOutputStream out = null;
+    try {
+      out = file.startWrite();
+      out.write(config.getBytes(StandardCharsets.UTF_8));
+      file.finishWrite(out);
+    } catch (IOException e) {
+      if (out != null) file.failWrite(out);
+      Log.w(TAG, "Saving the agent watch failed", e);
     }
   }
 
-  /**
-   * From the page: JSON with {@code routes} (server origins, best first),
-   * {@code token}, {@code source}, {@code asked} and {@code approval}, or an
-   * empty string once Luma is unpaired.
-   */
-  void configure(String config) {
-    if (config == null || config.isEmpty()) {
-      prefs.edit().remove(KEY_CONFIG).apply();
+  /** Watches with the saved pairing, if it changed or the watch isn't running yet. */
+  void reload() {
+    String config = load();
+    if (config == null) {
       stop();
-    } else if (!config.equals(prefs.getString(KEY_CONFIG, null)) || thread == null) {
-      prefs.edit().putString(KEY_CONFIG, config).apply();
+    } else if (!config.equals(watching)) {
       watch(config);
     }
   }
 
   void stop() {
+    watching = null;
     thread = null;
     closeSocket();
+  }
+
+  private String load() {
+    try {
+      return new String(
+          new AtomicFile(new File(context.getFilesDir(), CONFIG_FILE)).readFully(),
+          StandardCharsets.UTF_8);
+    } catch (FileNotFoundException e) {
+      return null;
+    } catch (IOException e) {
+      Log.w(TAG, "Reading the agent watch failed", e);
+      return null;
+    }
   }
 
   private void watch(String json) {
@@ -121,6 +159,7 @@ final class AgentWatch {
       return;
     }
     stop();
+    watching = json;
     Thread next = new Thread(() -> run(config), "luma-agent-watch");
     thread = next;
     next.start();
@@ -130,15 +169,16 @@ final class AgentWatch {
     return thread == Thread.currentThread();
   }
 
-  /** Tries each route in order, then backs off, until stopped or the token expires. */
+  /** Tries the routes as the page does, then backs off, until stopped or the token expires. */
   private void run(JSONObject config) {
     JSONArray routes = config.optJSONArray("routes");
     long backoff = 1000;
     while (current() && routes != null) {
-      for (int index = 0; index < routes.length() && current(); index++) {
+      for (String origin : order(routes, config.optString("environmentId"))) {
+        if (!current()) return;
         long started = SystemClock.elapsedRealtime();
         try {
-          session(routes.optString(index), config);
+          session(origin, config);
         } catch (Expired e) {
           Log.i(TAG, "Agent watch stopped: the pairing has expired");
           return;
@@ -150,6 +190,45 @@ final class AgentWatch {
       }
       SystemClock.sleep(backoff);
       backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
+    }
+  }
+
+  /**
+   * Routes that answer as the paired environment first, in rank order; silent
+   * ones are a last resort since the check itself can be what's blocked, as
+   * in src/agents/connection.ts. A route answering as another server, such as
+   * a stale LAN address, is skipped: it would reject the token and stop the
+   * watch, and shouldn't get the token anyway.
+   */
+  private static List<String> order(JSONArray routes, String environmentId) {
+    List<String> paired = new ArrayList<>();
+    List<String> silent = new ArrayList<>();
+    for (int index = 0; index < routes.length(); index++) {
+      String origin = routes.optString(index);
+      String answer = describe(origin);
+      if (answer == null) silent.add(origin);
+      else if (answer.equals(environmentId)) paired.add(origin);
+    }
+    paired.addAll(silent);
+    return paired;
+  }
+
+  /** The environment id a route answers with, or null if it doesn't answer. */
+  private static String describe(String origin) {
+    HttpURLConnection http = null;
+    try {
+      http = (HttpURLConnection) new URL(origin + ".well-known/t3/environment").openConnection();
+      http.setConnectTimeout(PROBE_MS);
+      http.setReadTimeout(PROBE_MS);
+      if (http.getResponseCode() / 100 != 2) return null;
+      try (InputStream body = http.getInputStream()) {
+        Object id = new JSONObject(readAll(body)).opt("environmentId");
+        return id instanceof String ? (String) id : null;
+      }
+    } catch (IOException | JSONException | RuntimeException e) {
+      return null;
+    } finally {
+      if (http != null) http.disconnect();
     }
   }
 
@@ -245,7 +324,9 @@ final class AgentWatch {
         JSONArray values = item.optJSONArray("values");
         for (int value = 0; values != null && value < values.length(); value++) {
           JSONObject shellItem = values.optJSONObject(value);
-          if (shellItem != null) alert(threads.apply(shellItem));
+          if (shellItem == null) continue;
+          List<JSONObject> waiting = threads.apply(shellItem);
+          if (threads.ready) alert(waiting, threads.pending());
         }
       } else if ("Exit".equals(tag) || "Defect".equals(tag)) {
         throw new IOException("stream ended: " + tag);
@@ -258,24 +339,19 @@ final class AgentWatch {
   /**
    * Records the waiting requests and alerts about the ones not seen before.
    * With no history at all, the first snapshot only records what's waiting.
+   * The history keeps only requests still pending, like takeAlerts().
    */
-  private void alert(List<JSONObject> waiting) {
+  private void alert(List<JSONObject> waiting, HashSet<String> pending) {
     String saved = prefs.getString(KEY_SEEN, null);
-    if (waiting.isEmpty() && saved != null) return;
     LinkedHashSet<String> seen = new LinkedHashSet<>();
     if (saved != null && !saved.isEmpty()) seen.addAll(Arrays.asList(saved.split("\n")));
+    boolean ended = seen.retainAll(pending);
     List<JSONObject> fresh = new ArrayList<>();
     for (JSONObject alert : waiting) {
       if (seen.add(alert.optString("requestId"))) fresh.add(alert);
     }
-    if (fresh.isEmpty() && saved != null) return;
-    List<String> ids = new ArrayList<>(seen);
-    prefs
-        .edit()
-        .putString(
-            KEY_SEEN,
-            TextUtils.join("\n", ids.subList(Math.max(0, ids.size() - REMEMBERED), ids.size())))
-        .apply();
+    if (!ended && fresh.isEmpty() && saved != null) return;
+    prefs.edit().putString(KEY_SEEN, TextUtils.join("\n", seen)).apply();
     if (saved == null) return;
     for (JSONObject alert : fresh) {
       main.post(() -> listener.onAlert(alert));
@@ -284,13 +360,15 @@ final class AgentWatch {
 
   /**
    * The parts of the page's shell model (src/agents/model.ts) an alert needs:
-   * project titles, and each thread's pending request while it needs you.
+   * project titles, and each thread's pending request.
    */
   private static final class Threads {
     private final JSONObject config;
     private final HashMap<String, String> projects = new HashMap<>();
+    /** Pending request id by thread, for every thread the shell holds. */
+    private final HashMap<String, String> requests = new HashMap<>();
     private long sequence;
-    private boolean ready;
+    boolean ready;
 
     Threads(JSONObject config) {
       this.config = config;
@@ -314,8 +392,9 @@ final class AgentWatch {
         if (refresh) return waiting;
         sequence = snapshot.optLong("snapshotSequence");
         ready = true;
+        requests.clear();
         for (int index = 0; threads != null && index < threads.length(); index++) {
-          addIfWaiting(threads.optJSONObject(index), waiting);
+          track(threads.optJSONObject(index), waiting);
         }
         return waiting;
       }
@@ -323,10 +402,26 @@ final class AgentWatch {
       sequence = item.optLong("sequence");
       if ("project.updated".equals(kind)) {
         project(item.optJSONObject("project"));
-      } else if ("thread.updated".equals(kind) && "active".equals(item.optString("location"))) {
-        addIfWaiting(item.optJSONObject("thread"), waiting);
+      } else if ("thread.updated".equals(kind)) {
+        JSONObject thread = item.optJSONObject("thread");
+        if ("active".equals(item.optString("location"))) track(thread, waiting);
+        else if (thread != null) requests.remove(thread.optString("id"));
+      } else if ("thread.removed".equals(kind)) {
+        requests.remove(item.optString("threadId"));
       }
       return waiting;
+    }
+
+    HashSet<String> pending() {
+      return new HashSet<>(requests.values());
+    }
+
+    private void track(JSONObject thread, List<JSONObject> waiting) {
+      if (thread == null) return;
+      JSONObject request = thread.optJSONObject("pendingRuntimeRequest");
+      if (request == null) requests.remove(thread.optString("id"));
+      else requests.put(thread.optString("id"), request.optString("id"));
+      addIfWaiting(thread, waiting);
     }
 
     private void project(JSONObject project) {
@@ -376,36 +471,51 @@ final class AgentWatch {
     boolean secure = "https".equals(url.getScheme());
     int port = url.getPort() > 0 ? url.getPort() : secure ? 443 : 80;
     Socket socket = new Socket();
-    socket.connect(new InetSocketAddress(url.getHost(), port), CONNECT_MS);
-    if (secure) {
-      socket =
-          ((SSLSocketFactory) SSLSocketFactory.getDefault())
-              .createSocket(socket, url.getHost(), port, true);
+    try {
+      socket.connect(new InetSocketAddress(url.getHost(), port), CONNECT_MS);
+      socket.setSoTimeout(HTTP_MS);
+      if (secure) {
+        SSLSocket tls =
+            (SSLSocket)
+                ((SSLSocketFactory) SSLSocketFactory.getDefault())
+                    .createSocket(socket, url.getHost(), port, true);
+        socket = tls;
+        // SSLSocket checks the chain, but not that it was issued for this host.
+        tls.startHandshake();
+        if (!HttpsURLConnection.getDefaultHostnameVerifier()
+            .verify(url.getHost(), tls.getSession())) {
+          throw new SSLPeerUnverifiedException("certificate isn't for " + url.getHost());
+        }
+      }
+      byte[] nonce = new byte[16];
+      new SecureRandom().nextBytes(nonce);
+      String request =
+          "GET " + url.getEncodedPath() + "?" + url.getEncodedQuery() + " HTTP/1.1\r\n"
+              + "Host: " + url.getHost() + ":" + port + "\r\n"
+              + "Upgrade: websocket\r\n"
+              + "Connection: Upgrade\r\n"
+              + "Sec-WebSocket-Key: " + Base64.encodeToString(nonce, Base64.NO_WRAP) + "\r\n"
+              + "Sec-WebSocket-Version: 13\r\n\r\n";
+      OutputStream out = socket.getOutputStream();
+      out.write(request.getBytes(StandardCharsets.UTF_8));
+      out.flush();
+      InputStream in = socket.getInputStream();
+      String status = readLine(in);
+      if (!status.startsWith("HTTP/1.1 101")) throw new IOException("upgrade refused: " + status);
+      while (!readLine(in).isEmpty()) {
+        // Headers; the server picked no extensions since none were offered.
+      }
+      socket.setSoTimeout(PING_MS);
+      return socket;
+    } catch (IOException | RuntimeException e) {
+      // The TLS socket, once there, closes the connection under it too.
+      try {
+        socket.close();
+      } catch (IOException ignored) {
+        // Already gone.
+      }
+      throw e;
     }
-    socket.setSoTimeout(HTTP_MS);
-    byte[] nonce = new byte[16];
-    new SecureRandom().nextBytes(nonce);
-    String request =
-        "GET " + url.getEncodedPath() + "?" + url.getEncodedQuery() + " HTTP/1.1\r\n"
-            + "Host: " + url.getHost() + ":" + port + "\r\n"
-            + "Upgrade: websocket\r\n"
-            + "Connection: Upgrade\r\n"
-            + "Sec-WebSocket-Key: " + Base64.encodeToString(nonce, Base64.NO_WRAP) + "\r\n"
-            + "Sec-WebSocket-Version: 13\r\n\r\n";
-    OutputStream out = socket.getOutputStream();
-    out.write(request.getBytes(StandardCharsets.UTF_8));
-    out.flush();
-    InputStream in = socket.getInputStream();
-    String status = readLine(in);
-    if (!status.startsWith("HTTP/1.1 101")) {
-      socket.close();
-      throw new IOException("upgrade refused: " + status);
-    }
-    while (!readLine(in).isEmpty()) {
-      // Headers; the server picked no extensions since none were offered.
-    }
-    socket.setSoTimeout(PING_MS);
-    return socket;
   }
 
   /**

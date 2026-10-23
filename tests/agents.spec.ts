@@ -504,23 +504,21 @@ test('an agent that newly needs you shows a toast, except where the agents page 
     }),
   });
 
-  // A new question from another agent shows; one from the agent on screen,
-  // arriving after it in the same update, would replace it if it alerted.
+  // Several agents asking in one update show one after another, except the
+  // agent on screen, which would come between them if it alerted.
   pushShell(
     waiting(6, 'thread-2', 'Second opinion on the overlay', 'r6'),
     waiting(7, threadId, 'Browser tests for the Agents tile', 'r5'),
+    waiting(8, 'thread-3', 'Pick a name for the release', 'r7'),
   );
   await expect(toast).toHaveCount(1);
-  await expect(toast).toContainText('Second opinion on the overlay');
-
-  await page.keyboard.press('Escape');
-  await expect(toast).toBeHidden({ timeout: 8000 });
-  pushShell(waiting(8, 'thread-3', 'Pick a name for the release', 'r7'));
-  await expect(toast).toBeVisible();
+  await expect(toast.locator('strong')).toHaveText('Second opinion on the overlay');
+  await expect(toast.locator('strong')).toHaveText('Pick a name for the release', {
+    timeout: 8000,
+  });
   await expect(toast.locator('.agent-toast-headline')).toHaveText(
     'Needs you · asked a questionworkstation',
   );
-  await expect(toast.locator('strong')).toHaveText('Pick a name for the release');
   await expect(toast.locator('small')).toHaveText('luma');
   // Fully shown once it has slid in, then gone after a few seconds.
   await expect(toast).toHaveCSS('opacity', '1');

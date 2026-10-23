@@ -98,15 +98,18 @@ function Launcher({
   const [conversation, setConversation] = useState<string | null>(null);
   const [inbox, setInbox] = useState(false);
   const agentsBack = useRef<(() => boolean) | null>(null);
-  const [agentAlert, setAgentAlert] = useState<AgentAlert | null>(null);
+  // Several agents can need you at once; each gets its turn on screen.
+  const [agentAlerts, setAgentAlerts] = useState<AgentAlert[]>([]);
+  const agentAlert = agentAlerts[0];
   useAgentsLifecycle();
   useAgentAlerts(
     useCallback((alert: AgentAlert) => {
       // The agents page already shows the agent it follows.
-      if (agentsConnection().getState().detail?.threadId !== alert.threadId) setAgentAlert(alert);
+      if (agentsConnection().getState().detail?.threadId !== alert.threadId)
+        setAgentAlerts((queued) => [...queued, alert]);
     }, []),
   );
-  const dismissAgentAlert = useCallback(() => setAgentAlert(null), []);
+  const nextAgentAlert = useCallback(() => setAgentAlerts((queued) => queued.slice(1)), []);
   // Luma's own T3 Code app sits in the library like an installed one; it
   // opens to pairing until it's connected.
   const apps = useMemo(
@@ -953,7 +956,7 @@ function Launcher({
         </div>
       ) : null}
       {agentAlert ? (
-        <AgentToast key={agentAlert.requestId} alert={agentAlert} onDone={dismissAgentAlert} />
+        <AgentToast key={agentAlert.requestId} alert={agentAlert} onDone={nextAgentAlert} />
       ) : null}
       {launching ? (
         <div className="launch-status" role="status">

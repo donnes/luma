@@ -82,6 +82,8 @@ export function openWebApp(url: string, then = ''): void {
 export const canAlertOverApps = (): boolean => shell()?.canAlertOverApps?.() === true;
 
 export interface AgentWatch {
+  /** The paired server; a route answering as another one is skipped. */
+  environmentId: string;
   /** Server origins, best first. */
   routes: string[];
   token: string;
@@ -92,7 +94,10 @@ export interface AgentWatch {
   approval: string;
 }
 
-/** Hands the shell the pairing to watch agents with; null once unpaired. */
+/**
+ * Hands the shell the pairing to watch agents with; null once unpaired. The
+ * shell keeps it whether HomeGuard is on or not.
+ */
 export function watchAgents(config: AgentWatch | null): void {
   shell()?.watchAgents?.(config ? JSON.stringify(config) : '');
 }

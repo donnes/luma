@@ -30,11 +30,10 @@ export const agentAlert = (
   source,
 });
 
-// Requests Luma has already alerted about, kept across restarts so that a
-// reconnect's snapshot doesn't announce them again.
+// Requests Luma has already alerted about and that are still pending, kept
+// across restarts so that a reconnect's snapshot doesn't announce them again.
+// A request leaves once it ends; asking again makes a new request id.
 const STORAGE_KEY = 'luma.agentAlerts.v1';
-/** Request ids are never reused; the newest few hundred cover everything still pending. */
-const REMEMBERED = 200;
 
 export function loadSeen(): string[] | null {
   try {
@@ -58,7 +57,8 @@ export function saveSeen(seen: string[]) {
  * `seen`. Keyed by request, so an agent alerts again only for a new request,
  * and a request that flips between blocking and not doesn't. With no history
  * at all (`seen` null, Luma's first snapshot ever), what is already waiting
- * is recorded without an alert.
+ * is recorded without an alert. The returned history keeps only requests
+ * still pending in `shell`, which must be the full shell.
  */
 export function takeAlerts(shell: Shell, seen: string[] | null) {
   const known = new Set(seen);
@@ -66,10 +66,15 @@ export function takeAlerts(shell: Shell, seen: string[] | null) {
     const id = agent.thread.pendingRuntimeRequest?.id;
     return id === undefined || known.has(id) ? [] : [{ agent, id }];
   });
+  const pending = new Set<string>();
+  for (const thread of shell.threads.values()) {
+    if (thread.pendingRuntimeRequest) pending.add(thread.pendingRuntimeRequest.id);
+  }
+  const kept = (seen ?? []).filter((id) => pending.has(id));
   // Unchanged history keeps its identity, so callers can skip saving it.
-  if (seen && !fresh.length) return { alerts: [] as Agent[], seen };
+  if (seen && !fresh.length && kept.length === seen.length) return { alerts: [] as Agent[], seen };
   return {
     alerts: seen ? fresh.map(({ agent }) => agent) : [],
-    seen: [...(seen ?? []), ...fresh.map(({ id }) => id)].slice(-REMEMBERED),
+    seen: [...kept, ...fresh.map(({ id }) => id)],
   };
 }

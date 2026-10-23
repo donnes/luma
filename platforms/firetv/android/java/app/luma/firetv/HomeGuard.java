@@ -32,6 +32,7 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import java.util.ArrayDeque;
 import java.util.List;
 import org.json.JSONObject;
 
@@ -63,7 +64,8 @@ import org.json.JSONObject;
  * when an agent newly needs you: over another app as a toast in the top-right
  * corner, in a window that takes no focus, keys or touches, so the app
  * underneath keeps the remote and keeps playing; or, while Luma is in front,
- * through Luma's page, which shows the same toast itself.
+ * through Luma's page, which shows the same toast itself. Several alerts show
+ * one after another, as on the page.
  *
  * <p>Events come only from Amazon's launcher package; window content is read
  * only to find the Luma tile there. Enable it once over ADB (see
@@ -79,7 +81,6 @@ public final class HomeGuard extends AccessibilityService {
   private static final String ACTION_LUMA_SHOWN = "app.luma.firetv.LUMA_SHOWN";
   private static final String ACTION_LUMA_HIDDEN = "app.luma.firetv.LUMA_HIDDEN";
   private static final String ACTION_WATCH_AGENTS = "app.luma.firetv.WATCH_AGENTS";
-  private static final String EXTRA_CONFIG = "config";
   /** To MainActivity, while Luma is in front. */
   static final String ACTION_AGENT_ALERT = "app.luma.firetv.AGENT_ALERT";
   static final String EXTRA_ALERT = "alert";
@@ -105,6 +106,8 @@ public final class HomeGuard extends AccessibilityService {
   private final Runnable hideAlert = this::hideAlert;
   private FrameLayout cover;
   private View alert;
+  /** Alerts waiting for the one on screen to finish. */
+  private final ArrayDeque<JSONObject> nextAlerts = new ArrayDeque<>();
   private AgentWatch agents;
   private int tileAttempts;
   private boolean lumaVisible;
@@ -122,7 +125,7 @@ public final class HomeGuard extends AccessibilityService {
           } else if (ACTION_LUMA_HIDDEN.equals(action)) {
             lumaVisible = false;
           } else if (ACTION_WATCH_AGENTS.equals(action) && agents != null) {
-            agents.configure(intent.getStringExtra(EXTRA_CONFIG));
+            agents.reload();
           }
         }
       };
@@ -149,11 +152,15 @@ public final class HomeGuard extends AccessibilityService {
     context.sendBroadcast(intent, PERMISSION);
   }
 
-  /** Luma's page hands over its pairing and the alert's words; see {@link AgentWatch#configure}. */
+  /**
+   * Luma's page hands over its pairing and the alert's words; see {@link
+   * AgentWatch#save}. Saved even while the service is off, which then reads
+   * it when it starts.
+   */
   static void watchAgents(Context context, String config) {
+    AgentWatch.save(context, config);
     Intent intent = new Intent(ACTION_WATCH_AGENTS);
     intent.setPackage(context.getPackageName());
-    intent.putExtra(EXTRA_CONFIG, config);
     context.sendBroadcast(intent, PERMISSION);
   }
 
@@ -164,7 +171,7 @@ public final class HomeGuard extends AccessibilityService {
     states.addAction(ACTION_WATCH_AGENTS);
     registerReceiver(lumaState, states, PERMISSION, null);
     agents = new AgentWatch(this, this::onAgentAlert);
-    agents.start();
+    agents.reload();
   }
 
   @Override
@@ -173,6 +180,7 @@ public final class HomeGuard extends AccessibilityService {
     if (agents != null) agents.stop();
     uncover();
     main.removeCallbacks(hideAlert);
+    nextAlerts.clear();
     removeAlert();
     super.onDestroy();
   }
@@ -292,26 +300,37 @@ public final class HomeGuard extends AccessibilityService {
   /** Luma's page shows its own toast while it's in front; elsewhere the alert goes over the app. */
   private void onAgentAlert(JSONObject alert) {
     if (lumaVisible) {
-      Intent intent = new Intent(ACTION_AGENT_ALERT);
-      intent.setPackage(getPackageName());
-      intent.putExtra(EXTRA_ALERT, alert.toString());
-      sendBroadcast(intent, PERMISSION);
+      toPage(alert);
     } else {
-      showAlert(alert);
+      nextAlerts.add(alert);
+      if (this.alert == null) showNextAlert();
     }
   }
 
-  /** A newer alert replaces the one on screen and starts the clock again. */
-  private void showAlert(JSONObject json) {
+  private void toPage(JSONObject alert) {
+    Intent intent = new Intent(ACTION_AGENT_ALERT);
+    intent.setPackage(getPackageName());
+    intent.putExtra(EXTRA_ALERT, alert.toString());
+    sendBroadcast(intent, PERMISSION);
+  }
+
+  /** Shows the next queued alert; once Luma is in front, its page takes the rest. */
+  private void showNextAlert() {
+    JSONObject next;
+    while ((next = nextAlerts.poll()) != null) {
+      if (lumaVisible) toPage(next);
+      else if (showAlert(next)) return;
+    }
+  }
+
+  private boolean showAlert(JSONObject json) {
     View card;
     try {
       card = alertCard(json);
     } catch (RuntimeException e) {
       Log.w(TAG, "Showing an agent alert failed", e);
-      return;
+      return false;
     }
-    main.removeCallbacks(hideAlert);
-    removeAlert();
     WindowManager.LayoutParams params =
         new WindowManager.LayoutParams(
             rems(55),
@@ -331,7 +350,7 @@ public final class HomeGuard extends AccessibilityService {
       ((WindowManager) getSystemService(WINDOW_SERVICE)).addView(card, params);
     } catch (RuntimeException e) {
       Log.w(TAG, "Showing an agent alert failed", e);
-      return;
+      return false;
     }
     alert = card;
     card.setAlpha(0);
@@ -342,6 +361,7 @@ public final class HomeGuard extends AccessibilityService {
         .setDuration(240)
         .setInterpolator(new DecelerateInterpolator(2));
     main.postDelayed(hideAlert, ALERT_MS - ALERT_FADE_MS);
+    return true;
   }
 
   private void hideAlert() {
@@ -356,6 +376,7 @@ public final class HomeGuard extends AccessibilityService {
             () -> {
               if (alert == card) {
                 removeAlert();
+                showNextAlert();
               }
             });
   }
