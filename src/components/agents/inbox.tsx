@@ -138,9 +138,10 @@ export function InboxPanel({
 
   // Live updates can move or remove the focused row: follow it, or land on the
   // row that took its place, or on the panel itself once the list is empty.
+  // Rows that arrive while the panel holds focus, as after connecting, take it.
   useLayoutEffect(() => {
     const node = panel.current;
-    if (!node || node.contains(document.activeElement)) return;
+    if (!node || (node.contains(document.activeElement) && document.activeElement !== node)) return;
     const list = rows();
     (
       list.find((row) => row.dataset.focusable === focused.current.id) ??

@@ -8,6 +8,7 @@ import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.ConsoleMessage;
@@ -123,6 +124,26 @@ public class MainActivity extends Activity {
         "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',"
             + "keyCode:27,which:27,bubbles:true,cancelable:true}))";
     webView.evaluateJavascript(escape, null);
+  }
+
+  /**
+   * The WebView keeps Menu from the page, as it does Back, so the shell hands
+   * the focused element the keydown a browser would send; Luma opens its
+   * inbox on it.
+   */
+  @Override
+  public boolean dispatchKeyEvent(KeyEvent event) {
+    if (event.getKeyCode() != KeyEvent.KEYCODE_MENU || webView == null) {
+      return super.dispatchKeyEvent(event);
+    }
+    if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+      webView.evaluateJavascript(
+          "(document.activeElement||document).dispatchEvent(new KeyboardEvent('keydown',"
+              + "{key:'ContextMenu',code:'ContextMenu',keyCode:93,which:93,bubbles:true,"
+              + "cancelable:true}))",
+          null);
+    }
+    return true;
   }
 
   static void enterImmersive(Activity activity) {

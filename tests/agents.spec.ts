@@ -332,6 +332,19 @@ test('the inbox panel moves, opens and closes with the remote on its own', async
   await expect(page.locator('body')).toHaveAttribute('data-log', 'open finished;close;close;');
 });
 
+test('rows that arrive after the panel opened take focus', async ({ page }) => {
+  await page.route('**/inbox-standalone.html?late', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: '<!doctype html><div id="root"></div><script type="module" src="/tests/inbox-standalone.tsx"></script>',
+    }),
+  );
+  await page.goto('/inbox-standalone.html?late');
+  const inbox = page.getByRole('dialog', { name: 'Inbox' });
+  await expect(inbox).toContainText('Connecting…');
+  await expect(inbox.getByRole('button', { name: /^approve,/ })).toBeFocused();
+});
+
 test('going back up a tall group keeps its first row in view', async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 600 });
   await page.route('**/inbox-standalone.html?tall', (route) =>
