@@ -117,7 +117,8 @@ test('the T3 Code app opens to pairing, then OK approves the waiting agent', asy
   await expect(address).toBeFocused();
   await address.fill(`${server}/pair#token=ABCD-EFGH-JKLM`);
   await page.getByRole('button', { name: 'Pair', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('Paired with T3 Code');
+  // The "Connecting…" loader is a status too, while the first snapshot loads.
+  await expect(page.getByRole('status').filter({ hasText: 'Paired with T3 Code' })).toBeVisible();
 
   await expect(
     page.getByRole('heading', { name: 'Browser tests for the Agents tile' }),
