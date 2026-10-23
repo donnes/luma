@@ -395,7 +395,7 @@ public final class HomeGuard extends AccessibilityService {
 
   /** Luma's page shows its own toast while it's in front; elsewhere the alert goes over the app. */
   private void onAgentAlert(JSONObject alert) {
-    if (lumaVisible) {
+    if (lumaInFront()) {
       toPage(alert);
     } else {
       nextAlerts.add(alert);
@@ -428,7 +428,7 @@ public final class HomeGuard extends AccessibilityService {
   private void showNextAlert() {
     JSONObject next;
     while ((next = nextAlerts.poll()) != null) {
-      if (lumaVisible) toPage(next);
+      if (lumaInFront()) toPage(next);
       else if (showAlert(next)) return;
     }
   }
