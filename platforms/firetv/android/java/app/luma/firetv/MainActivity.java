@@ -48,7 +48,7 @@ public class MainActivity extends Activity {
    * request mapping and zero dependencies.
    */
   private static final String HOST = "luma.local";
-  private static final String BASE_URL = "https://" + HOST + "/";
+  static final String BASE_URL = "https://" + HOST + "/";
   private static final String ASSET_ROOT = "app/";
   /** Installed apps' banners and icons, drawn by the shell on request. */
   private static final String ART_PREFIX = "/app-art/";
@@ -258,31 +258,44 @@ public class MainActivity extends Activity {
     return view;
   }
 
-  /** Maps {@code luma.local/**} onto {@code assets/app/**}; 404s are empty. */
+  /** Maps {@code luma.local/**} onto {@code assets/app/**}, and serves app art. */
   private final class AssetWebViewClient extends WebViewClient {
     @Override
     public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
       Uri url = request.getUrl();
-      if (!HOST.equals(url.getHost()) || !"https".equals(url.getScheme())) {
-        return null;
-      }
       String path = url.getPath();
-      if (path != null && path.startsWith(ART_PREFIX) && path.endsWith(".png")) {
+      if (isLuma(url) && path != null && path.startsWith(ART_PREFIX) && path.endsWith(".png")) {
         byte[] png = shell.art(path.substring(ART_PREFIX.length(), path.length() - 4));
         return png == null
             ? notFound()
             : new WebResourceResponse("image/png", null, new ByteArrayInputStream(png));
       }
-      String relative =
-          path == null || path.isEmpty() || "/".equals(path) ? "index.html" : path.substring(1);
-      String asset = ASSET_ROOT + relative;
-      try {
-        InputStream data = getAssets().open(asset);
-        String mime = mimeFor(asset);
-        return new WebResourceResponse(mime, isText(mime) ? "utf-8" : null, data);
-      } catch (IOException missing) {
-        return notFound();
-      }
+      return asset(MainActivity.this, url);
+    }
+  }
+
+  private static boolean isLuma(Uri url) {
+    return HOST.equals(url.getHost()) && "https".equals(url.getScheme());
+  }
+
+  /**
+   * The bundled file for a {@code luma.local} URL, empty 404s included; null
+   * for other origins, which go to the network. Also serves {@link InboxActivity}.
+   */
+  static WebResourceResponse asset(Context context, Uri url) {
+    if (!isLuma(url)) {
+      return null;
+    }
+    String path = url.getPath();
+    String relative =
+        path == null || path.isEmpty() || "/".equals(path) ? "index.html" : path.substring(1);
+    String asset = ASSET_ROOT + relative;
+    try {
+      InputStream data = context.getAssets().open(asset);
+      String mime = mimeFor(asset);
+      return new WebResourceResponse(mime, isText(mime) ? "utf-8" : null, data);
+    } catch (IOException missing) {
+      return notFound();
     }
   }
 

@@ -2,6 +2,7 @@ package app.luma.firetv;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
@@ -41,6 +42,27 @@ public class WebAppActivity extends Activity {
   private boolean handoff;
   /** The deep link is loading; forget the pairing pages before it. */
   private boolean forgetHistory;
+
+  /**
+   * Opens {@code url}, then {@code then} when not empty, once the page has
+   * left /pair; null, logged, for anything but http(s).
+   */
+  static Intent intent(Context context, String url, String then) {
+    boolean hasThen = then != null && !then.isEmpty();
+    if (!isWeb(url) || (hasThen && !isWeb(then))) {
+      Log.w(TAG, "Refusing to open " + url);
+      return null;
+    }
+    Intent intent = new Intent(context, WebAppActivity.class);
+    intent.putExtra(EXTRA_URL, url);
+    if (hasThen) intent.putExtra(EXTRA_THEN, then);
+    return intent;
+  }
+
+  private static boolean isWeb(String url) {
+    String scheme = url == null ? null : Uri.parse(url).getScheme();
+    return "http".equals(scheme) || "https".equals(scheme);
+  }
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {

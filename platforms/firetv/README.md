@@ -23,6 +23,9 @@ a synchronous JSON call:
   — the ids of the requests already alerted about, as a JSON array (`null`
   before any), shared with HomeGuard
 
+The inbox window over other apps (see below) loads the same bundle with
+`#inbox`, and its `window.LumaAndroid` has `openWebApp(url, then)` alone.
+
 The shell (`platforms/firetv/android/`) injects the object with
 `addJavascriptInterface` and implements it as `app.luma.firetv.Shell`. App ids
 are **Android package names** — on purpose, so they pass the shared
@@ -37,7 +40,8 @@ through PackageManager. No permissions beyond internet are needed.
   (`file://` cannot load subresources securely or keep CSP/localStorage
   semantics). Any other origin — the weather API — goes to the network.
 - The Back key dispatches an `Escape` keydown into the app, which owns panel
-  and page back-stacks. When the app has nothing to close,
+  and page back-stacks. The WebView keeps Menu from the page too, so the shell
+  dispatches a `ContextMenu` keydown for it, which opens Luma's inbox. When the app has nothing to close,
   `platformBack()` reaches `exit()` and the shell calls `moveTaskToBack`
   instead of finishing: relaunching Luma is instant and the task survives.
 - D-pad navigation and OK work as arrow/Enter key events, like a browser.
@@ -153,6 +157,54 @@ announce a request again that the other one already did.
 
 Force-stopping Luma also turns HomeGuard off (Android removes it from the
 enabled services); enable it again with the commands above.
+
+## Agents inbox over other apps
+
+Menu (≡) opens Luma's agents inbox on top of whatever app is in front,
+including T3 Code's web app. HomeGuard filters key events for this: it
+consumes Menu when Luma's own page isn't in front and lets every other key
+through untouched. In Luma, Menu goes through to the page, which opens the
+same inbox itself.
+
+The inbox is `InboxActivity`, a translucent activity in its own task in
+Luma's main process. Its WebView loads Luma's bundle with `#inbox`, which
+draws only the inbox panel over a transparent page, and shares the pairing
+with MainActivity through localStorage. Back or Menu closes it and the app
+underneath is in front again. OK on a thread opens it in T3 Code's web app,
+in Luma's task, where an open T3 Code takes the thread; Back from there
+returns to Luma, not to the app the inbox opened over.
+
+The activity finishes as soon as anything else comes to the front, so no
+second Luma WebView stays alive on a 1 GB stick. If the system took Luma's
+main process, the inbox starts it again, which takes 1–2 seconds, and the
+list fills in once the connection to T3 Code is up. Some apps pause their
+video while the inbox is on top.
+
+`adb shell input keyevent` injects keys after the accessibility key filter,
+so it can't test this. Send the remote's own input events instead, for
+example Menu on the stick Luma is tested on (AFTSS, where `amzkeyboard` is `/dev/input/event4`
+there; `adb shell getevent -pl` lists the devices):
+
+```sh
+adb shell 'sendevent /dev/input/event4 1 139 1; sendevent /dev/input/event4 0 0 0;
+  sendevent /dev/input/event4 1 139 0; sendevent /dev/input/event4 0 0 0'
+```
+
+### After updating from a build without the Menu filter
+
+Android keeps an enabled service's old capabilities across `adb install -r`.
+HomeGuard stays on but can't filter keys, so Menu over other apps does
+nothing. `adb shell dumpsys accessibility` then shows `capabilities=1`
+instead of `9`. Turn HomeGuard off and on again once:
+
+```sh
+adb shell settings put secure enabled_accessibility_services '""'
+adb shell settings put secure enabled_accessibility_services \
+  com.luma.launcher/app.luma.firetv.HomeGuard
+adb shell settings put secure accessibility_enabled 1
+```
+
+Later updates keep the new capabilities.
 
 ## TODO
 

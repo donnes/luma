@@ -74,6 +74,12 @@ import org.json.JSONObject;
  * page, and one whose request ends, say because it was answered elsewhere,
  * leaves the screen or the queue, here or on the page.
  *
+ * <p>The Menu key opens the agents inbox ({@link InboxActivity}) over
+ * whatever app is in front, T3 Code's web app included. Luma's own page
+ * handles Menu itself, so while it's in front the key goes through. The
+ * service filters key events for this alone: every other key passes straight
+ * on.
+ *
  * <p>Events come only from Amazon's launcher package; window content is read
  * only to find the Luma tile there. Enable it once over ADB (see
  * platforms/firetv/README.md).
@@ -126,6 +132,8 @@ public final class HomeGuard extends AccessibilityService {
   private int tileAttempts;
   private boolean lumaVisible;
   private long lumaShownAt;
+  /** Whether this Menu press opens the inbox, so its key-up goes the same way. */
+  private boolean menuOpensInbox;
 
   private final BroadcastReceiver lumaState =
       new BroadcastReceiver() {
@@ -236,6 +244,31 @@ public final class HomeGuard extends AccessibilityService {
       return;
     }
     returnToLuma();
+  }
+
+  /** Runs for every key press on the device, so anything but Menu leaves at once. */
+  @Override
+  protected boolean onKeyEvent(KeyEvent event) {
+    if (event.getKeyCode() != KeyEvent.KEYCODE_MENU) {
+      return false;
+    }
+    if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+      // While the cover hides Amazon's home on the way back, it takes the key.
+      menuOpensInbox = !lumaVisible && cover == null;
+      if (menuOpensInbox) openInbox();
+    }
+    return menuOpensInbox;
+  }
+
+  /** Opens the inbox over the app in front, or closes it if it's already there. */
+  private void openInbox() {
+    Intent inbox = new Intent(this, InboxActivity.class);
+    inbox.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    try {
+      startActivity(inbox);
+    } catch (RuntimeException e) {
+      Log.w(TAG, "Opening the agents inbox failed", e);
+    }
   }
 
   private void returnToLuma() {
