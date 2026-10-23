@@ -1,0 +1,211 @@
+/* The agents inbox panel. Everything it needs is scoped here so it renders
+   the same outside Luma's page styles; amber only ever means "needs you". */
+/* The panel sits on the right, above whatever page Menu opened it on. */
+.inbox-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 2.8rem 5.25rem;
+  background: linear-gradient(90deg, #080b1259 0%, #080b12b3 55%);
+  animation: fade-in 0.12s ease-out;
+}
+.reduce-motion .inbox-layer {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .inbox-layer {
+    animation: none;
+  }
+}
+.inbox {
+  --inbox-amber: #f5c26b;
+  --inbox-blue: #8ccfff;
+  --inbox-green: #8fdca3;
+  --inbox-red: #ff8f80;
+  --inbox-muted: rgba(245, 245, 245, 0.56);
+  width: 52rem;
+  max-width: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 1.7rem;
+  background: linear-gradient(145deg, #2c3033f7, #1d2024fc);
+  border: 1px solid #ffffff1f;
+  box-shadow:
+    0 25px 120px #0007,
+    inset 0 1px 1px #ffffff0a;
+  color: #f5f5f5;
+  padding: 2.4rem 1.6rem 1.6rem;
+  text-align: left;
+}
+.inbox,
+.inbox * {
+  box-sizing: border-box;
+}
+/* With no rows left the panel itself holds focus, so Back still works. */
+.inbox:focus {
+  outline: none;
+}
+.inbox-header {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0 1.2rem 1.4rem;
+}
+.inbox-glyph {
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0.3rem;
+  border-radius: 0.55rem;
+  background: #f5f5f5;
+  color: #17191c;
+}
+.inbox-header h2 {
+  margin: 0;
+  font-size: 2.2rem;
+  font-weight: 500;
+  letter-spacing: -0.05em;
+  line-height: 1.1;
+}
+.inbox-source {
+  margin-left: auto;
+  font-size: 1.1rem;
+  color: var(--inbox-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inbox-list {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: 0.3rem;
+  margin: -0.3rem;
+}
+.inbox-list::-webkit-scrollbar {
+  display: none;
+}
+.inbox-group h3 {
+  margin: 1.2rem 1.2rem 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--inbox-muted);
+}
+.inbox-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.inbox-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1.6rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.85rem 1.2rem;
+  border: 0;
+  border-radius: 1rem;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.inbox-row:focus,
+.inbox-row:focus-visible {
+  outline: none;
+  background: #ffffff14;
+  box-shadow: inset 0 0 0 2px #f0f0f0f2;
+}
+.inbox-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.inbox-text strong,
+.inbox-text small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inbox-text strong {
+  font-size: 1.45rem;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.25;
+}
+.inbox-text small {
+  font-size: 1.05rem;
+  color: var(--inbox-muted);
+}
+.inbox-row time {
+  font-size: 1.05rem;
+  color: var(--inbox-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.inbox-dot,
+.inbox-spinner {
+  justify-self: center;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+}
+.inbox-dot {
+  background: #ffffff59;
+}
+.inbox-dot-input,
+.inbox-dot-approval {
+  background: var(--inbox-amber);
+  box-shadow: 0 0 12px #f5c26b80;
+}
+.inbox-dot-done {
+  background: var(--inbox-green);
+}
+.inbox-dot-error {
+  background: var(--inbox-red);
+}
+.inbox-spinner {
+  width: 0.95rem;
+  height: 0.95rem;
+  border: 2px solid #8ccfff40;
+  border-top-color: var(--inbox-blue);
+  animation: inbox-spin 0.9s linear infinite;
+}
+.inbox-empty,
+.inbox-notice p {
+  margin: 1rem 1.2rem;
+  font-size: 1.2rem;
+  color: var(--inbox-muted);
+}
+.inbox-notice p:first-child {
+  margin-bottom: 0.4rem;
+  font-size: 1.45rem;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  color: #f5f5f5;
+}
+.inbox-notice p + p {
+  margin-top: 0;
+}
+@keyframes inbox-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.reduce-motion .inbox-spinner {
+  animation: none;
+  border-color: var(--inbox-blue);
+}
+@media (prefers-reduced-motion: reduce) {
+  .inbox-spinner {
+    animation: none;
+    border-color: var(--inbox-blue);
+  }
+}

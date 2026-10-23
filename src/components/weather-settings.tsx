@@ -3,6 +3,7 @@ import { Check, Eye, LoaderCircle, MapPin, Search, Thermometer, X } from 'lucide
 import type { TemperatureUnit, WeatherLocation } from '../types';
 import { clearWeatherCache, locationDetail, locationKey, searchLocations } from '../weather';
 import { useTranslation } from '../i18n';
+import { isBackKey } from '../navigation';
 
 const temperatureUnits = [
   { value: 'celsius', label: 'celsius', symbol: '°C' },
@@ -146,7 +147,7 @@ export function WeatherSettings({
             data-focus-up={`setting-temperature-${unit}`}
             value={query}
             onKeyDown={(event) => {
-              if (event.key === 'Escape' || event.keyCode === 461) {
+              if (isBackKey(event)) {
                 event.preventDefault();
                 event.stopPropagation();
                 if (!event.repeat) {

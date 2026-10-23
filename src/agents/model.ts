@@ -1,5 +1,6 @@
 import type {
   ApprovalDecision,
+  BackgroundTaskKind,
   ProjectShell,
   RequestKind,
   RuntimeRequest,
@@ -13,6 +14,8 @@ import type {
 
 export type AgentStatus = 'input' | 'approval' | 'starting' | 'running' | 'done' | 'error' | 'idle';
 
+const holdsCompletion = new Set<BackgroundTaskKind>(['subagent', 'monitor', 'background_task']);
+
 // Mirrors T3 Code's packages/shared/src/agentAwareness.ts so the TV and the
 // desktop agree on which agents are waiting for you.
 export function agentStatus(thread: ThreadShell): AgentStatus {
@@ -25,7 +28,12 @@ export function agentStatus(thread: ThreadShell): AgentStatus {
     return 'approval';
   if (run === 'preparing' || run === 'starting') return 'starting';
   if (run === 'running' || run === 'waiting') return 'running';
-  if (run === 'completed') return 'done';
+  // A finished run still waiting on subagents, monitors or background tasks
+  // is working. Plain background commands don't hold it.
+  if (run === 'completed')
+    return thread.pendingBackgroundTasks?.some((task) => holdsCompletion.has(task.kind))
+      ? 'running'
+      : 'done';
   if (run === 'failed') return 'error';
   return 'idle';
 }
@@ -99,12 +107,7 @@ export function applyShellItem(shell: Shell, item: ShellStreamItem): Shell {
 const RECENT_MS = 24 * 60 * 60 * 1000;
 export const SHELF_SIZE = 12;
 
-// Needs-you agents first (oldest request first, since it's been waiting
-// longest), then working agents, then unsettled agents from the last day.
-// Working agents sort by when their run started, not by their last update:
-// every step a running agent takes bumps updatedAt and would reshuffle the shelf.
-export function shelfAgents(shell: Shell, now = Date.now()): Agent[] {
-  const agents: Agent[] = [];
+function* visibleAgents(shell: Shell): Generator<Agent> {
   for (const thread of shell.threads.values()) {
     if (
       thread.archivedAt ||
@@ -112,33 +115,65 @@ export function shelfAgents(shell: Shell, now = Date.now()): Agent[] {
       thread.lineage?.relationshipToParent === 'subagent'
     )
       continue;
-    const status = agentStatus(thread);
+    yield { thread, project: shell.projects.get(thread.projectId), status: agentStatus(thread) };
+  }
+}
+
+const isRecent = (thread: ThreadShell, now: number) =>
+  now - Date.parse(thread.updatedAt) < RECENT_MS;
+
+// When the agent's current state began: its request, its run, or its last
+// update. Working agents use their run start, not their last update: every
+// step a running agent takes bumps updatedAt and would reshuffle the list.
+export function agentSince({ thread, status }: Agent): string {
+  if (needsYou(status) && thread.pendingRuntimeRequest)
+    return thread.pendingRuntimeRequest.createdAt;
+  if (isWorking(status)) return thread.latestRunStartedAt ?? thread.createdAt;
+  return thread.updatedAt;
+}
+
+// A request that has waited longest comes first; everything else is newest first.
+const oldestFirst = (a: Agent, b: Agent) =>
+  Date.parse(agentSince(a)) - Date.parse(agentSince(b)) || a.thread.id.localeCompare(b.thread.id);
+const newestFirst = (a: Agent, b: Agent) =>
+  Date.parse(agentSince(b)) - Date.parse(agentSince(a)) || a.thread.id.localeCompare(b.thread.id);
+
+// Needs-you agents first, then working agents, then unsettled agents from the last day.
+export function shelfAgents(shell: Shell, now = Date.now()): Agent[] {
+  const agents: Agent[] = [];
+  for (const agent of visibleAgents(shell)) {
+    const { thread, status } = agent;
     const settled =
       thread.settledOverride === 'settled' ||
       (thread.settledAt !== null && thread.settledOverride !== 'active');
-    const recent = now - Date.parse(thread.updatedAt) < RECENT_MS;
-    if (!needsYou(status) && !isWorking(status) && (settled || !recent)) continue;
-    agents.push({ thread, project: shell.projects.get(thread.projectId), status });
+    if (!needsYou(status) && !isWorking(status) && (settled || !isRecent(thread, now))) continue;
+    agents.push(agent);
   }
   const rank = (agent: Agent) => (needsYou(agent.status) ? 0 : isWorking(agent.status) ? 1 : 2);
   return agents
-    .sort((a, b) => {
-      const byRank = rank(a) - rank(b);
-      if (byRank) return byRank;
-      if (rank(a) === 0)
-        return (
-          Date.parse(a.thread.pendingRuntimeRequest!.createdAt) -
-          Date.parse(b.thread.pendingRuntimeRequest!.createdAt)
-        );
-      const since = (agent: Agent) =>
-        Date.parse(
-          rank(agent) === 1
-            ? (agent.thread.latestRunStartedAt ?? agent.thread.createdAt)
-            : agent.thread.updatedAt,
-        );
-      return since(b) - since(a) || a.thread.id.localeCompare(b.thread.id);
-    })
+    .sort((a, b) => rank(a) - rank(b) || (rank(a) === 0 ? oldestFirst : newestFirst)(a, b))
     .slice(0, SHELF_SIZE);
+}
+
+export interface Inbox {
+  needsYou: Agent[];
+  done: Agent[];
+  working: Agent[];
+}
+
+// Every live agent, plus the ones that stopped within the last day, settled
+// or not: the shelf hides settled threads, but the inbox lists what finished.
+export function inboxGroups(shell: Shell, now = Date.now()): Inbox {
+  const inbox: Inbox = { needsYou: [], done: [], working: [] };
+  for (const agent of visibleAgents(shell)) {
+    if (needsYou(agent.status)) inbox.needsYou.push(agent);
+    else if (isWorking(agent.status)) inbox.working.push(agent);
+    else if (isRecent(agent.thread, now)) inbox.done.push(agent);
+  }
+  inbox.needsYou.sort(oldestFirst);
+  inbox.done.sort(newestFirst);
+  inbox.working.sort(newestFirst);
+  return inbox;
 }
 
 // --- Thread detail -------------------------------------------------------

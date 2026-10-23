@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { KeyRound, Link2, LoaderCircle, Server } from 'lucide-react';
 import { useAgents } from '../../agents/use-agents';
 import { useTranslation, type MessageKey } from '../../i18n';
+import { isBackKey } from '../../navigation';
 import { T3Glyph } from './agents-mark';
 
 const pairingErrors: Record<string, MessageKey> = {
@@ -15,7 +16,7 @@ const pairingErrors: Record<string, MessageKey> = {
 
 // Back leaves the field instead of the page, like the weather city search.
 const stopEscape = (event: KeyboardEvent<HTMLInputElement>) => {
-  if (event.key === 'Escape' || event.keyCode === 461) {
+  if (isBackKey(event)) {
     event.preventDefault();
     event.stopPropagation();
     if (!event.repeat) event.currentTarget.blur();

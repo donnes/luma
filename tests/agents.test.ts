@@ -6,6 +6,7 @@ import {
   applyThreadItem,
   emptyDetail,
   emptyShell,
+  inboxGroups,
   pendingRequest,
   shelfAgents,
 } from '../src/agents/model.ts';
@@ -69,6 +70,23 @@ test('agent status matches T3 Code: questions and approvals need you, auth refre
     'starting',
   );
   assert.equal(agentStatus(thread('a', { status: 'interrupted' })), 'idle');
+  // A finished parent waiting on its subagents is still working; a leftover
+  // background command doesn't keep it from being done.
+  assert.equal(
+    agentStatus(
+      thread('a', {
+        status: 'completed',
+        pendingBackgroundTasks: [{ kind: 'command' }, { kind: 'subagent' }],
+      }),
+    ),
+    'running',
+  );
+  assert.equal(
+    agentStatus(
+      thread('a', { status: 'completed', pendingBackgroundTasks: [{ kind: 'command' }] }),
+    ),
+    'done',
+  );
 });
 
 test('the shelf puts the longest-waiting request first and drops settled, old and subagent threads', () => {
@@ -119,6 +137,50 @@ test('the shelf puts the longest-waiting request first and drops settled, old an
   });
   assert.equal(shell.threads.size, 6);
   assert.equal(shell.projects.get('p')?.title, 'Luma');
+});
+
+test('the inbox groups needs-you, done and working threads, each in its own order', () => {
+  const shell = applyShellItem(emptyShell(), {
+    kind: 'snapshot',
+    snapshot: {
+      snapshotSequence: 1,
+      projects: [{ id: 'p', title: 'luma' }],
+      threads: [
+        thread('newer-request', {
+          pendingRuntimeRequest: { id: 'r2', kind: 'user_input', createdAt: minutesAgo(1) },
+        }),
+        thread('older-request', {
+          pendingRuntimeRequest: { id: 'r1', kind: 'command', createdAt: minutesAgo(9) },
+        }),
+        // Started later but stepped longer ago: run start decides, not the last step.
+        thread('newer-run', {
+          status: 'running',
+          latestRunStartedAt: minutesAgo(3),
+          updatedAt: minutesAgo(2),
+        }),
+        thread('older-run', {
+          status: 'running',
+          latestRunStartedAt: minutesAgo(30),
+          updatedAt: minutesAgo(1),
+        }),
+        thread('settled', {
+          status: 'completed',
+          settledAt: minutesAgo(4),
+          updatedAt: minutesAgo(4),
+        }),
+        thread('failed', { status: 'failed', updatedAt: minutesAgo(8) }),
+        thread('finished', { status: 'completed', updatedAt: minutesAgo(2) }),
+        thread('yesterday', { status: 'completed', updatedAt: minutesAgo(60 * 25) }),
+        thread('archived', { status: 'completed', archivedAt: minutesAgo(1) }),
+        thread('helper', { status: 'running', lineage: { relationshipToParent: 'subagent' } }),
+      ],
+    },
+  });
+  const ids = (agents: { thread: { id: string } }[]) => agents.map((agent) => agent.thread.id);
+  const inbox = inboxGroups(shell, now);
+  assert.deepEqual(ids(inbox.needsYou), ['older-request', 'newer-request']);
+  assert.deepEqual(ids(inbox.done), ['finished', 'settled', 'failed']);
+  assert.deepEqual(ids(inbox.working), ['newer-run', 'older-run']);
 });
 
 test('a pending approval pairs with its turn item and keeps the server’s decisions', () => {

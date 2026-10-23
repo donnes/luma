@@ -3,6 +3,13 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+/** Holds OK on the focused element long enough to open its options. */
+async function holdOk(page: Page) {
+  await page.keyboard.down('Enter');
+  await page.waitForTimeout(700);
+  await page.keyboard.up('Enter');
+}
+
 test('home is remote navigable, opening a preview never pretends to launch a TV app', async ({
   page,
 }, info) => {
@@ -30,9 +37,7 @@ test('hold OK opens options, favorites persist and hidden apps can be restored',
   await page.goto('/');
   await page.getByRole('button', { name: 'Apps', exact: true }).click();
   await page.getByRole('button', { name: 'Open Netflix', exact: true }).focus();
-  await page.keyboard.down('Enter');
-  await page.waitForTimeout(700);
-  await page.keyboard.up('Enter');
+  await holdOk(page);
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.getByRole('button', { name: 'Remove from favorites' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -43,7 +48,7 @@ test('hold OK opens options, favorites persist and hidden apps can be restored',
   await page.getByRole('button', { name: 'Apps', exact: true }).click();
   const netflix = page.getByRole('button', { name: 'Open Netflix', exact: true });
   await netflix.focus();
-  await page.keyboard.press('m');
+  await holdOk(page);
   await page.getByRole('button', { name: 'Hide app', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(netflix).toHaveCount(0);
@@ -51,7 +56,7 @@ test('hold OK opens options, favorites persist and hidden apps can be restored',
   await expect(page.locator('.library-grid [data-app-id]')).toHaveCount(1);
   await expect(netflix).toBeVisible();
   await netflix.focus();
-  await page.keyboard.press('m');
+  await holdOk(page);
   await page.getByRole('button', { name: 'Show app', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Hidden (1)', exact: true })).toHaveCount(0);
@@ -581,14 +586,15 @@ test('connection artwork follows the reported device labels without changing the
     .toEqual(['com.webos.app.hdmi1', 'com.webos.app.hdmi4']);
 });
 
-test('Home favorites move inline with hold OK and left/right, and Back keeps the order', async ({
+test('Home favorites move from their options with left/right, and Back keeps the order', async ({
   page,
 }) => {
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'Open Netflix', exact: true })).toBeFocused();
-  await page.keyboard.down('Enter');
-  await page.waitForTimeout(700);
-  await page.keyboard.up('Enter');
+  await holdOk(page);
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByRole('button', { name: 'Move', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
   const moving = page.getByRole('button', { name: 'Move Netflix', exact: true });
   await expect(moving).toBeFocused();
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -806,7 +812,7 @@ test('app-action highlight follows pointer and remote input, and hiding keeps fo
       ),
   );
   await expect(next).toBeFocused();
-  await page.keyboard.press('m');
+  await holdOk(page);
   const close = page.getByRole('button', { name: 'Close', exact: true });
   await close.hover();
   await expect(close).toBeFocused();
@@ -821,7 +827,7 @@ test('app actions close immediately, keep favorites first, and filter hidden app
   await page.getByRole('button', { name: 'Apps', exact: true }).click();
   const browser = page.getByRole('button', { name: 'Open Web Browser', exact: true });
   await browser.focus();
-  await page.keyboard.press('m');
+  await holdOk(page);
   const favorite = page.getByRole('button', { name: 'Add to favorites', exact: true });
   await expect(favorite).toBeFocused();
   await expect(page.getByRole('dialog').locator('img')).toHaveCount(0);
@@ -839,7 +845,7 @@ test('app actions close immediately, keep favorites first, and filter hidden app
   let favorites = await readFavoriteOrder();
   expect((await readLibraryOrder()).slice(0, favorites.length)).toEqual(favorites);
   await expect(browser.locator('.favorite-badge')).toBeVisible();
-  await page.keyboard.press('m');
+  await holdOk(page);
   await page.keyboard.press('ArrowDown');
   await expect(page.getByRole('button', { name: 'Hide app', exact: true })).toBeFocused();
   await page.keyboard.press('Enter');
@@ -851,7 +857,7 @@ test('app actions close immediately, keep favorites first, and filter hidden app
     .click();
   await expect(page.locator('.library-grid [data-app-id]')).toHaveCount(1);
   await browser.focus();
-  await page.keyboard.press('m');
+  await holdOk(page);
   await page.getByRole('button', { name: 'Show app', exact: true }).focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -860,7 +866,7 @@ test('app actions close immediately, keep favorites first, and filter hidden app
   favorites = await readFavoriteOrder();
   expect((await readLibraryOrder()).slice(0, favorites.length)).toEqual(favorites);
   await browser.focus();
-  await page.keyboard.press('m');
+  await holdOk(page);
   await expect(
     page.getByRole('button', { name: 'Remove from favorites', exact: true }),
   ).toBeFocused();

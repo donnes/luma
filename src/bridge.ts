@@ -4,6 +4,7 @@ export {
   loadInventory,
   launchApp,
   platformBack,
+  registerRemoteKeys,
   canOpenWebApp,
   openWebApp,
 } from '@luma/bridge';

@@ -13,6 +13,7 @@ import type { Language, Preferences } from '../types';
 import { useRef, useState } from 'react';
 import { wallpapers, wallpaperThumbnail } from '../wallpapers';
 import { useTranslation, wallpaperLabel } from '../i18n';
+import { isBackKey } from '../navigation';
 
 interface Props {
   preferences: Preferences;
@@ -148,7 +149,7 @@ export function Settings({ preferences, onUpdate, onRefresh }: Props) {
                       event.preventDefault();
                       event.stopPropagation();
                       openLanguageMenu();
-                    } else if (event.key === 'Escape' || event.keyCode === 461) {
+                    } else if (isBackKey(event)) {
                       event.preventDefault();
                       event.stopPropagation();
                       setLanguageMenuOpen(false);
@@ -177,11 +178,7 @@ export function Settings({ preferences, onUpdate, onRefresh }: Props) {
                   tabIndex={-1}
                   aria-label={t('languageMenu')}
                   onKeyDown={(event) => {
-                    if (
-                      event.key === 'Escape' ||
-                      event.keyCode === 461 ||
-                      event.key === 'Backspace'
-                    ) {
+                    if (isBackKey(event) || event.key === 'Backspace') {
                       event.preventDefault();
                       setLanguageMenuOpen(false);
                       languageButton.current?.focus({ preventScroll: true });
@@ -205,11 +202,7 @@ export function Settings({ preferences, onUpdate, onRefresh }: Props) {
                       data-focus-up={`language-option-${option === 'en' ? 'zh' : option === 'de' ? 'en' : 'de'}`}
                       data-focus-down={`language-option-${option === 'en' ? 'de' : option === 'de' ? 'zh' : 'en'}`}
                       onKeyDown={(event) => {
-                        if (
-                          event.key === 'Escape' ||
-                          event.keyCode === 461 ||
-                          event.key === 'Backspace'
-                        ) {
+                        if (isBackKey(event) || event.key === 'Backspace') {
                           event.preventDefault();
                           event.stopPropagation();
                           setLanguageMenuOpen(false);
