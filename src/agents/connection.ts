@@ -1,4 +1,12 @@
 import {
+  answerCommand,
+  decideCommand,
+  dispatchCommand,
+  messageCommand,
+  stopCommand,
+  type Command,
+} from './commands';
+import {
   applyShellItem,
   applyThreadItem,
   emptyDetail,
@@ -45,16 +53,6 @@ const MAX_BACKOFF_MS = 60000;
 /** Moving along the shelf shouldn't open a subscription for every card passed. */
 const WATCH_DELAY_MS = 150;
 const CACHED_DETAILS = 16;
-
-function uuid(): string {
-  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
-  // randomUUID needs a secure context; plain-HTTP previews don't have one.
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
 
 // Browsers block http:// from https:// pages. The Fire TV shell serves Luma
 // from https://luma.local/ but explicitly allows mixed content.
@@ -117,6 +115,7 @@ export class AgentsConnection {
 
   async pair(address: string, code: string, deviceLabel: string) {
     const pairing = await pair(address, code, deviceLabel);
+    savePairing(pairing);
     this.disconnect();
     this.set({ pairing, status: 'paused', shell: emptyShell(), detail: null, route: null });
     this.resume();
@@ -350,40 +349,26 @@ export class AgentsConnection {
 
   // --- Commands ------------------------------------------------------------
 
-  private dispatch(command: Record<string, unknown>) {
+  private dispatch(command: Command) {
     if (!this.socket || this.state.status !== 'connected')
       return Promise.reject(new Error('offline'));
-    return this.socket.request('orchestration.dispatchCommand', {
-      ...command,
-      commandId: uuid(),
-    });
+    return dispatchCommand(this.socket, command);
   }
 
   respond(threadId: string, requestId: string, decision: ApprovalDecision) {
-    return this.dispatch({ type: 'runtime-request.respond', threadId, requestId, decision });
+    return this.dispatch(decideCommand(threadId, requestId, decision));
   }
 
   answer(threadId: string, requestId: string, answers: Record<string, string | string[]>) {
-    return this.dispatch({ type: 'runtime-request.respond', threadId, requestId, answers });
+    return this.dispatch(answerCommand(threadId, requestId, answers));
   }
 
-  /** The server decides whether a message steers or queues behind an active run. */
   send(threadId: string, text: string) {
-    return this.dispatch({
-      type: 'message.dispatch',
-      createdBy: 'user',
-      creationSource: 'web',
-      threadId,
-      messageId: uuid(),
-      text,
-      attachments: [],
-      deliveryIntent: 'auto',
-      dispatchMode: { type: 'start_immediately' },
-    });
+    return this.dispatch(messageCommand(threadId, text));
   }
 
   stop(threadId: string) {
-    return this.dispatch({ type: 'thread.stop', threadId });
+    return this.dispatch(stopCommand(threadId));
   }
 }
 
