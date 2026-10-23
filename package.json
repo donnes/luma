@@ -17,6 +17,7 @@
     "deploy": "pnpm run package && node tools/deploy.mjs",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:browser": "playwright test",
+    "voice": "node --import tsx packages/voice/src/main.ts",
     "check": "pnpm lint && pnpm typecheck",
     "lint": "oxlint --deny-warnings .",
     "lint:fix": "oxlint --fix --deny-warnings .",
@@ -38,6 +39,7 @@
     "@types/node": "^24.10.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@types/ws": "^8.18.2",
     "@webos-tools/cli": "3.2.6",
     "esbuild": "^0.27.0",
     "oxfmt": "0.73.0",
@@ -45,6 +47,7 @@
     "sharp": "0.35.5",
     "tsx": "^4.20.6",
     "typescript": "~5.9.3",
-    "vite": "8.3.4"
+    "vite": "8.3.4",
+    "ws": "^8.22.0"
   }
 }

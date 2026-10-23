@@ -85,17 +85,21 @@ export async function pair(address: string, code: string, deviceLabel: string): 
     pairedOn: route,
     routes: [route],
   };
-  savePairing(pairing);
   return pairing;
 }
 
 /** Mints the short-lived ticket a browser WebSocket needs, since it can't send headers. */
-export async function websocketTicket(route: Route, token: string): Promise<string> {
+export async function websocketTicket(
+  route: Route,
+  token: string,
+  signal?: AbortSignal,
+): Promise<string> {
   let response: Response;
   try {
     response = await fetch(`${route.url}api/auth/websocket-ticket`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}` },
+      signal,
     });
   } catch {
     throw new PairingError('unreachable');
@@ -145,9 +149,10 @@ const isRoute = (value: unknown): value is Route =>
   /^https?:\/\//.test((value as Route).url) &&
   typeof (value as Route).kind === 'string';
 
-export function loadPairing(): Pairing | null {
+/** Validates a saved pairing; the voice service keeps its own in a file. */
+export function parsePairing(json: string | null): Pairing | null {
   try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
+    const value = JSON.parse(json ?? 'null');
     if (
       !value ||
       typeof value.environmentId !== 'string' ||
@@ -165,6 +170,14 @@ export function loadPairing(): Pairing | null {
       pairedOn: value.pairedOn,
       routes: routes.length ? routes : [value.pairedOn],
     };
+  } catch {
+    return null;
+  }
+}
+
+export function loadPairing(): Pairing | null {
+  try {
+    return parsePairing(localStorage.getItem(STORAGE_KEY));
   } catch {
     return null;
   }

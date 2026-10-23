@@ -229,6 +229,10 @@ export interface PendingQuestion {
 
 export type PendingRequest = PendingApproval | PendingQuestion;
 
+/** What T3 Code expects back for a chosen option. */
+export const answerValue = (option: UserInputQuestion['options'][number]) =>
+  option.value ?? option.label;
+
 const defaultDecisions: { decision: ApprovalDecision; label: string }[] = [
   { decision: 'accept', label: 'Approve' },
   { decision: 'acceptForSession', label: 'Allow for this session' },

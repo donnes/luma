@@ -1,0 +1,11 @@
+{
+  "name": "@luma/voice",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Luma's voice service: an iOS Shortcut asks, OpenAI picks a T3 Code tool, Luma answers.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "start": "node --import tsx src/main.ts"
+  }
+}
