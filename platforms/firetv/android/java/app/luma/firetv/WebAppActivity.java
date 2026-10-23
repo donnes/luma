@@ -38,6 +38,8 @@ public class WebAppActivity extends Activity {
   private WebView webView;
   private String injection;
   private String then;
+  /** Where this page is headed, the deep link or the page itself, for Luma to reopen after a repair. */
+  private String target;
   /** Opened with a pairing code: a pair page with no code is T3 Code mid hand-off, not a lost session. */
   private boolean handoff;
   /** The deep link is loading; forget the pairing pages before it. */
@@ -88,6 +90,7 @@ public class WebAppActivity extends Activity {
   private void load(Intent intent) {
     String url = intent.getStringExtra(EXTRA_URL);
     then = intent.getStringExtra(EXTRA_THEN);
+    target = then != null ? then : url;
     handoff = "/pair".equals(Uri.parse(url).getPath());
     webView.loadUrl(url);
   }
@@ -183,7 +186,11 @@ public class WebAppActivity extends Activity {
   }
 
   private final class Page {
-    /** The server wants a pairing code: close and let Luma's form collect one. */
+    /**
+     * The server wants a pairing code: close and let Luma's page pair again and
+     * reopen the target. That page may not be the one that opened this, as
+     * with the inbox over other apps, so the target goes along.
+     */
     @JavascriptInterface
     public void repair() {
       runOnUiThread(
@@ -191,6 +198,7 @@ public class WebAppActivity extends Activity {
             if (handoff) return;
             Intent luma = new Intent(WebAppActivity.this, MainActivity.class);
             luma.setAction(MainActivity.ACTION_REPAIR_WEB_APP);
+            luma.putExtra(EXTRA_URL, target);
             startActivity(luma);
             finish();
           });

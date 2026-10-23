@@ -30,6 +30,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import org.json.JSONArray;
+import org.json.JSONObject;
 
 /**
  * Android TV / Fire TV shell: hosts the bundled Luma app ({@code dist/app} lives
@@ -53,7 +54,10 @@ public class MainActivity extends Activity {
   /** Installed apps' banners and icons, drawn by the shell on request. */
   private static final String ART_PREFIX = "/app-art/";
   private static final String TAG = "luma";
-  /** Sent by {@link WebAppActivity} when T3 Code's web app needs a new pairing code. */
+  /**
+   * Sent by {@link WebAppActivity} when T3 Code's web app needs a new pairing
+   * code, with the URL it was headed to as {@link WebAppActivity#EXTRA_URL}.
+   */
   static final String ACTION_REPAIR_WEB_APP = "app.luma.firetv.REPAIR_WEB_APP";
 
   /** Long enough for the resumed window's first frame to reach the screen. */
@@ -67,7 +71,8 @@ public class MainActivity extends Activity {
    * is, for the page's own toast, then the requests that ended. HomeGuard
    * counts an alert as shown once it's sent, so the events that come while
    * the page is still starting, as after the system killed Luma, wait here in
-   * order until the page listens for them.
+   * order until the page listens for them. So does a web app repair that
+   * starts this activity.
    */
   private final BroadcastReceiver fromHomeGuard =
       new BroadcastReceiver() {
@@ -108,6 +113,8 @@ public class MainActivity extends Activity {
     events.addAction(HomeGuard.ACTION_AGENT_ALERT);
     events.addAction(HomeGuard.ACTION_AGENTS_ENDED);
     registerReceiver(fromHomeGuard, events, HomeGuard.PERMISSION, null);
+    // A restored activity would repeat the repair it was started for.
+    if (savedInstanceState == null) repairWebApp(getIntent());
   }
 
   /** From the page, through {@link Shell#listenForAgentAlerts}. */
@@ -128,8 +135,13 @@ public class MainActivity extends Activity {
   @Override
   protected void onNewIntent(Intent intent) {
     super.onNewIntent(intent);
+    repairWebApp(intent);
+  }
+
+  private void repairWebApp(Intent intent) {
     if (ACTION_REPAIR_WEB_APP.equals(intent.getAction())) {
-      webView.evaluateJavascript("window.dispatchEvent(new Event('luma:t3-repair'))", null);
+      String url = intent.getStringExtra(WebAppActivity.EXTRA_URL);
+      toPage("luma:t3-repair", JSONObject.quote(url == null ? "" : url));
     }
   }
 

@@ -174,7 +174,9 @@ draws only the inbox panel over a transparent page, and shares the pairing
 with MainActivity through localStorage. Back or Menu closes it and the app
 underneath is in front again. OK on a thread opens it in T3 Code's web app,
 in Luma's task, where an open T3 Code takes the thread; Back from there
-returns to Luma, not to the app the inbox opened over.
+returns to Luma, not to the app the inbox opened over. If T3 Code's session
+has expired, the web app hands the thread's URL to MainActivity, whose page
+pairs again and reopens that thread, starting first if it wasn't running.
 
 The activity finishes as soon as anything else comes to the front, so no
 second Luma WebView stays alive on a 1 GB stick. If the system took Luma's
