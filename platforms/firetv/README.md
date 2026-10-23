@@ -81,7 +81,8 @@ console output, and `adb shell monkey -p com.luma.launcher 1` to launch.
 Fire OS won't accept a replacement home screen: Home always opens Amazon's
 launcher, and most apps exit to it. The APK includes an accessibility service,
 `app.luma.firetv.HomeGuard`, that watches window changes of
-`com.amazon.tv.launcher` and brings Luma back whenever it appears. It also
+`com.amazon.tv.launcher` and brings Luma back whenever its home screen
+appears. Other launcher screens, such as voice search results, stay. It also
 opens Luma after a reboot, because enabled services start with the system.
 It runs in its own `:guard` process so the low-memory killer can take the
 WebView without taking the service along.
