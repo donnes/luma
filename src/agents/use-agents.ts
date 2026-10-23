@@ -11,6 +11,7 @@ import {
   agentAlert,
   alertHeadline,
   loadSeen,
+  pendingRequests,
   saveSeen,
   takeAlerts,
   type AgentAlert,
@@ -69,13 +70,16 @@ export function useAgentAlerts() {
     let pairing: Pairing | null | undefined;
     // The history while this page finds alerts itself; undefined while
     // HomeGuard does and keeps it.
-    const sync = (alerts: AgentAlert[], ended: Iterable<string> = []) => {
+    const sync = (alerts: AgentAlert[], ended: Iterable<string> = [], pending?: Set<string>) => {
       const gone = new Set(ended);
       setQueue((queued) => {
         // The agents page already shows the agent it follows.
         const shown = connection.getState().detail?.threadId;
         const next = queued.filter(
-          ({ alert }) => !gone.has(alert.requestId) && alert.threadId !== shown,
+          ({ alert }) =>
+            !gone.has(alert.requestId) &&
+            (!pending || pending.has(alert.requestId)) &&
+            alert.threadId !== shown,
         );
         // One entry per request, even if the shell sends it twice.
         const requests = new Set(next.map(({ alert }) => alert.requestId));
@@ -109,6 +113,7 @@ export function useAgentAlerts() {
       }
       let alerts: AgentAlert[] = [];
       let ended: string[] = [];
+      let pending: Set<string> | undefined;
       if (state.shell !== shell && state.shell.ready) {
         shell = state.shell;
         // HomeGuard can be turned on or off while the page lives on, so who
@@ -121,8 +126,10 @@ export function useAgentAlerts() {
           try {
             before = loadSeen();
           } catch {
-            // Unreadable for now: the next update tries again.
+            // Unreadable for now: the next update tries again. Queued alerts
+            // still leave once their request ends.
             shell = undefined;
+            pending = pendingRequests(state.shell);
           }
         }
         if (before !== undefined) {
@@ -136,7 +143,7 @@ export function useAgentAlerts() {
         }
       }
       // Also runs when the agents page opens an agent, whose alerts then leave.
-      sync(alerts, ended);
+      sync(alerts, ended, pending);
     };
     const show = (event: Event) => {
       if (event instanceof CustomEvent) sync([event.detail]);

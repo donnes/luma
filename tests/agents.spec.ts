@@ -684,6 +684,28 @@ test('on Fire TV, an alert waits out a history the shell cannot read', async ({ 
   await expect(page.locator('.agent-toast strong')).toHaveText('Second opinion on the overlay');
 });
 
+test('on Fire TV, a queued alert leaves once answered even while the history is unreadable', async ({
+  page,
+}) => {
+  await fireTV(page, ['r1']);
+  const { pushShell } = await mockT3(page);
+  await pairOnFireTV(page);
+  await page.evaluate(() => Object.assign(window, { __homeGuard: false }));
+  const toast = page.locator('.agent-toast');
+  pushShell(
+    asking(6, 'thread-2', 'Second opinion on the overlay', 'r6'),
+    asking(7, 'thread-3', 'Pick a name for the release', 'r7'),
+  );
+  await expect(toast.locator('strong')).toHaveText('Second opinion on the overlay');
+
+  // The second is answered while the history can't be read.
+  await page.evaluate(() => Object.assign(window, { __historyFails: true }));
+  pushShell(asking(8, 'thread-3', 'Pick a name for the release', null));
+  await expect(toast).toBeHidden({ timeout: 8000 });
+  await page.waitForTimeout(1000);
+  await expect(toast).toHaveCount(0);
+});
+
 test('on Fire TV, a queued alert leaves once HomeGuard sees its request end', async ({ page }) => {
   await fireTV(page, ['r1']);
   await mockT3(page);

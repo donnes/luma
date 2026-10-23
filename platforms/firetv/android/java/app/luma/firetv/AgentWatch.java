@@ -122,10 +122,12 @@ final class AgentWatch {
    * side did.
    */
   static String loadSeen(Context context) throws IOException {
-    try (InputStream in = new FileInputStream(new File(context.getFilesDir(), SEEN_FILE))) {
+    File file = new File(context.getFilesDir(), SEEN_FILE);
+    // Only a file that isn't there means no history; any other failure to
+    // open it throws, so no request is taken as already seen.
+    if (!file.exists()) return "null";
+    try (InputStream in = new FileInputStream(file)) {
       return readAll(in);
-    } catch (FileNotFoundException e) {
-      return "null";
     }
   }
 

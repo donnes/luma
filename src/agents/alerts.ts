@@ -78,16 +78,22 @@ export function saveSeen(seen: string[]) {
  * is recorded without an alert. The returned history keeps only requests
  * still pending in `shell`, which must be the full shell.
  */
+/** Every request still pending in `shell`. */
+export function pendingRequests(shell: Shell) {
+  const pending = new Set<string>();
+  for (const thread of shell.threads.values()) {
+    if (thread.pendingRuntimeRequest) pending.add(thread.pendingRuntimeRequest.id);
+  }
+  return pending;
+}
+
 export function takeAlerts(shell: Shell, seen: string[] | null) {
   const known = new Set(seen);
   const fresh = inboxGroups(shell).needsYou.flatMap((agent) => {
     const id = agent.thread.pendingRuntimeRequest?.id;
     return id === undefined || known.has(id) ? [] : [{ agent, id }];
   });
-  const pending = new Set<string>();
-  for (const thread of shell.threads.values()) {
-    if (thread.pendingRuntimeRequest) pending.add(thread.pendingRuntimeRequest.id);
-  }
+  const pending = pendingRequests(shell);
   const kept = (seen ?? []).filter((id) => pending.has(id));
   // Unchanged history keeps its identity, so callers can skip saving it.
   if (seen && !fresh.length && kept.length === seen.length) return { alerts: [] as Agent[], seen };
