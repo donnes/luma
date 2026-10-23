@@ -164,9 +164,9 @@ Menu (≡) opens Luma's agents inbox on top of whatever app is in front,
 including T3 Code's web app. HomeGuard filters key events for this: it
 consumes Menu when Luma's own page isn't in front and lets every other key
 through untouched. In Luma, Menu goes through to the page, which opens the
-same inbox itself. On each Menu press HomeGuard asks the system for the
-active window and takes it for Luma's page when it's Luma's and titled with
-the app's label, so Luma's other activities need labels of their own.
+same inbox itself. HomeGuard counts the page as in front when MainActivity
+last reported it shown and the process that sent that report is still
+alive, so a Luma that died in front doesn't keep Menu from the inbox.
 
 The inbox is `InboxActivity`, a translucent activity in its own task in
 Luma's main process. Its WebView loads Luma's bundle with `#inbox`, which

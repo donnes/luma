@@ -2,6 +2,7 @@ package app.luma.firetv;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.app.ActivityManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -11,9 +12,9 @@ import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Process;
 import android.os.SystemClock;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
@@ -79,11 +80,10 @@ import org.json.JSONObject;
  * whatever app is in front, T3 Code's web app included. Luma's own page
  * handles Menu itself, so while it's in front the key goes through. The
  * service filters key events for this alone: every other key passes straight
- * on, and only Menu looks at the windows.
+ * on.
  *
  * <p>Events come only from Amazon's launcher package; window content is read
- * only to find the Luma tile there, and on Menu to tell whether Luma's page
- * is the active window. Enable it once over ADB (see
+ * only to find the Luma tile there. Enable it once over ADB (see
  * platforms/firetv/README.md).
  */
 public final class HomeGuard extends AccessibilityService {
@@ -98,6 +98,8 @@ public final class HomeGuard extends AccessibilityService {
   private static final String ACTION_WATCH_AGENTS = "app.luma.firetv.WATCH_AGENTS";
   /** To MainActivity: report whether Luma is in front. */
   static final String ACTION_REPORT_LUMA = "app.luma.firetv.REPORT_LUMA";
+  /** On LUMA_SHOWN: the pid of Luma's main process, which reported it. */
+  private static final String EXTRA_PID = "pid";
   /** To MainActivity, while Luma is in front. */
   static final String ACTION_AGENT_ALERT = "app.luma.firetv.AGENT_ALERT";
   static final String EXTRA_ALERT = "alert";
@@ -133,6 +135,7 @@ public final class HomeGuard extends AccessibilityService {
   private AgentWatch agents;
   private int tileAttempts;
   private boolean lumaVisible;
+  private int lumaPid;
   private long lumaShownAt;
   /** Whether this Menu press opens the inbox, so its key-up goes the same way. */
   private boolean menuOpensInbox;
@@ -144,6 +147,7 @@ public final class HomeGuard extends AccessibilityService {
           String action = intent.getAction();
           if (ACTION_LUMA_SHOWN.equals(action)) {
             lumaVisible = true;
+            lumaPid = intent.getIntExtra(EXTRA_PID, 0);
             lumaShownAt = SystemClock.uptimeMillis();
             uncover();
             // Luma's page takes the queue from here; this alert was already seen.
@@ -178,6 +182,7 @@ public final class HomeGuard extends AccessibilityService {
   static void report(Context context, boolean shown) {
     Intent intent = new Intent(shown ? ACTION_LUMA_SHOWN : ACTION_LUMA_HIDDEN);
     intent.setPackage(context.getPackageName());
+    if (shown) intent.putExtra(EXTRA_PID, Process.myPid());
     context.sendBroadcast(intent, PERMISSION);
   }
 
@@ -241,7 +246,7 @@ public final class HomeGuard extends AccessibilityService {
     }
     // Already on the way back, or Luma just arrived.
     if (cover != null
-        || lumaVisible
+        || lumaInFront()
         || SystemClock.uptimeMillis() - lumaShownAt < SETTLE_MS) {
       return;
     }
@@ -263,21 +268,22 @@ public final class HomeGuard extends AccessibilityService {
   }
 
   /**
-   * Whether Luma's page is the active window, asked of the system rather than
-   * {@link #lumaVisible}: a Luma that died in front never reported leaving.
-   * Not through {@link #getWindows}: this process caches its answer, and
-   * only events this service doesn't receive would clear it. The page's
-   * window takes its title from the app's label; Luma's other activities
-   * have labels of their own (see the manifest).
+   * Whether Luma's page is in front: it last reported so, and the process
+   * that reported it still runs. A Luma that died in front never reported
+   * leaving. This asks the system only for this app's own processes, so
+   * unlike a query of the windows it never waits on the app in front, and
+   * it can run inside the key filter.
    */
   private boolean lumaInFront() {
-    // Window titles came with Android 7.
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return lumaVisible;
-    AccessibilityNodeInfo root = getRootInActiveWindow();
-    if (root == null || !getPackageName().contentEquals(root.getPackageName())) return false;
-    AccessibilityWindowInfo window = root.getWindow();
-    String label = String.valueOf(getApplicationInfo().loadLabel(getPackageManager()));
-    return window != null && label.contentEquals(window.getTitle());
+    if (!lumaVisible) return false;
+    ActivityManager manager = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+    List<ActivityManager.RunningAppProcessInfo> processes = manager.getRunningAppProcesses();
+    if (processes != null) {
+      for (ActivityManager.RunningAppProcessInfo process : processes) {
+        if (process.pid == lumaPid && getPackageName().equals(process.processName)) return true;
+      }
+    }
+    return false;
   }
 
   /** Opens the inbox over the app in front, or closes it if it's already there. */
