@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { test } from 'node:test';
 import {
   agentStatus,
@@ -9,6 +11,7 @@ import {
   pendingRequest,
   shelfAgents,
 } from '../src/agents/model.ts';
+import { describe } from '../src/agents/pairing.ts';
 import { learnRoutes, parsePairingInput, routeFor, routeKind } from '../src/agents/routes.ts';
 import type { ThreadShell } from '../src/agents/types.ts';
 
@@ -261,4 +264,30 @@ test('working agents keep their shelf order while they emit updates', () => {
     shelfAgents(shell, now).map((agent) => agent.thread.id),
     ['newer-run', 'older-run'],
   );
+});
+
+test('an identity check only vouches for the address it asked, not where it was redirected', async () => {
+  const listen = (server: Server) =>
+    new Promise<string>((resolve) =>
+      server.listen(0, '127.0.0.1', () =>
+        resolve(`http://127.0.0.1:${(server.address() as AddressInfo).port}/`),
+      ),
+    );
+  const paired = createServer((_, response) => {
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ environmentId: 'env-1', label: 'workstation' }));
+  });
+  const pairedUrl = await listen(paired);
+  const other = createServer((_, response) => {
+    response.writeHead(302, { location: `${pairedUrl}.well-known/t3/environment` });
+    response.end();
+  });
+  const otherUrl = await listen(other);
+  try {
+    assert.equal((await describe(routeFor(pairedUrl), 2000)).environmentId, 'env-1');
+    await assert.rejects(describe(routeFor(otherUrl), 2000));
+  } finally {
+    paired.close();
+    other.close();
+  }
 });

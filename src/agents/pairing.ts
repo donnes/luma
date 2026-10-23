@@ -32,8 +32,12 @@ export async function describe(route: Route, timeout: number): Promise<Environme
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   try {
+    // The answer vouches for this address only: a redirect could borrow another
+    // server's identity, and a cached one could outlive a change of owner.
     const response = await fetch(`${route.url}.well-known/t3/environment`, {
       signal: controller.signal,
+      redirect: 'error',
+      cache: 'no-store',
     });
     if (!response.ok) throw new PairingError('unreachable');
     const body = await response.json();
