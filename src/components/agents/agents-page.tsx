@@ -1,6 +1,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type MutableRefObject,
@@ -8,6 +9,7 @@ import {
 } from 'react';
 import { ArrowUpRight, Check, LoaderCircle, MessageCircle, Square, WifiOff } from 'lucide-react';
 import {
+  inboxGroups,
   isWorking,
   lastAssistantText,
   modelLabel,
@@ -23,6 +25,7 @@ import { canOpenT3Code, openT3Code, threadPath } from '../../agents/web-client';
 import type { ApprovalDecision, ThreadShell } from '../../agents/types';
 import { useTranslation } from '../../i18n';
 import { Conversation } from './conversation';
+import { InboxPanel } from './inbox';
 import { PairingBox } from './pairing-box';
 import {
   ProjectMark,
@@ -47,14 +50,25 @@ const focusPrimary = () =>
 interface Props {
   conversation: string | null;
   onConversation: (threadId: string | null) => void;
+  inbox: boolean;
+  onInbox: (open: boolean) => void;
   backRef: MutableRefObject<(() => boolean) | null>;
   onPaired: () => void;
   notify: (text: string, error?: boolean) => void;
 }
 
-export function AgentsPage({ conversation, onConversation, backRef, onPaired, notify }: Props) {
+export function AgentsPage({
+  conversation,
+  onConversation,
+  inbox,
+  onInbox,
+  backRef,
+  onPaired,
+  notify,
+}: Props) {
   const { t } = useTranslation();
   const { state, agents, connection } = useAgents();
+  const groups = useMemo(() => inboxGroups(state.shell), [state.shell]);
   const [selected, setSelected] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<ThreadShell | null>(null);
   const current = agents.find((agent) => agent.thread.id === selected) ?? agents[0] ?? null;
@@ -131,6 +145,26 @@ export function AgentsPage({ conversation, onConversation, backRef, onPaired, no
       </div>
     );
 
+  const inboxPanel = inbox ? (
+    <div
+      className="inbox-layer"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onInbox(false);
+      }}
+    >
+      <InboxPanel
+        inbox={groups}
+        source={state.pairing.label || undefined}
+        onOpen={(threadId) => {
+          onInbox(false);
+          openThread(threadId);
+        }}
+        onClose={() => onInbox(false)}
+      />
+    </div>
+  ) : null;
+
   const conversationThread = conversation ? state.shell.threads.get(conversation) : undefined;
   if (conversation && conversationThread)
     return (
@@ -148,17 +182,21 @@ export function AgentsPage({ conversation, onConversation, backRef, onPaired, no
         {replyTo ? (
           <ReplyDialog thread={replyTo} onClose={() => setReplyTo(null)} notify={notify} />
         ) : null}
+        {inboxPanel}
       </>
     );
 
   if (!current)
     return (
-      <AgentsMessage
-        icon={<Check />}
-        title={t('agentsQuietTitle')}
-        body={t('agentsQuietBody')}
-        {...(canOpenT3Code() ? { action: t('agentsOpenT3'), onAction: () => openT3() } : {})}
-      />
+      <>
+        <AgentsMessage
+          icon={<Check />}
+          title={t('agentsQuietTitle')}
+          body={t('agentsQuietBody')}
+          {...(canOpenT3Code() ? { action: t('agentsOpenT3'), onAction: () => openT3() } : {})}
+        />
+        {inboxPanel}
+      </>
     );
 
   return (
@@ -202,6 +240,7 @@ export function AgentsPage({ conversation, onConversation, backRef, onPaired, no
       {replyTo ? (
         <ReplyDialog thread={replyTo} onClose={() => setReplyTo(null)} notify={notify} />
       ) : null}
+      {inboxPanel}
     </div>
   );
 }

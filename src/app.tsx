@@ -32,6 +32,7 @@ import { categoryLabel, LanguageProvider, useTranslation } from './i18n';
 import { AgentsPage } from './components/agents/agents-page';
 import { AgentsSummary } from './components/agents/agents-summary';
 import { ConnectionButton } from './components/agents/connection-button';
+import { InboxButton } from './components/agents/inbox-button';
 import { OpenT3Button } from './components/agents/open-t3-button';
 import { AGENTS_APP_ID, useAgentsLifecycle } from './agents/use-agents';
 import { repairT3Code } from './agents/web-client';
@@ -92,6 +93,7 @@ function Launcher({
   const refreshing = useRef(false);
   const reducedMotion = preferences.reducedMotion;
   const [conversation, setConversation] = useState<string | null>(null);
+  const [inbox, setInbox] = useState(false);
   const agentsBack = useRef<(() => boolean) | null>(null);
   useAgentsLifecycle();
   // Luma's own T3 Code app sits in the library like an installed one; it
@@ -218,6 +220,7 @@ function Launcher({
   const openPage = useCallback((next: Page) => {
     setReordering(null);
     setConversation(null);
+    setInbox(false);
     setPage(next);
     setQuery('');
     setCategory(null);
@@ -508,6 +511,7 @@ function Launcher({
             <div className="header-right">
               {page === 'agents' ? (
                 <>
+                  <InboxButton onOpen={() => setInbox(true)} />
                   <OpenT3Button notify={notify} />
                   <ConnectionButton />
                 </>
@@ -759,6 +763,8 @@ function Launcher({
               <AgentsPage
                 conversation={conversation}
                 onConversation={setConversation}
+                inbox={inbox}
+                onInbox={setInbox}
                 backRef={agentsBack}
                 notify={notify}
                 onPaired={() => {
@@ -814,7 +820,7 @@ function Launcher({
                     ) : null}
                     <span>
                       <span className="keycap">Back</span>
-                      {conversation ? t('agents') : t('homeLabel')}
+                      {inbox ? t('close') : conversation ? t('agents') : t('homeLabel')}
                     </span>
                   </>
                 ) : reordering ? (

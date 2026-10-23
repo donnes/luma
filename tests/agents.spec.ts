@@ -56,7 +56,7 @@ const threadSnapshot = {
   },
 };
 
-async function mockT3(page: Page) {
+async function mockT3(page: Page, shell: object = shellSnapshot) {
   const commands: Record<string, unknown>[] = [];
   const json = (route: Route, body: unknown) =>
     route.fulfill({
@@ -90,7 +90,7 @@ async function mockT3(page: Page) {
       if (message._tag !== 'Request') return;
       const { id, tag, payload } = message;
       if (tag === 'orchestration.subscribeShell')
-        reply({ _tag: 'Chunk', requestId: id, values: [shellSnapshot] });
+        reply({ _tag: 'Chunk', requestId: id, values: [shell] });
       else if (tag === 'orchestration.subscribeThread')
         reply({ _tag: 'Chunk', requestId: id, values: [threadSnapshot] });
       else if (tag === 'server.getConfig')
@@ -117,7 +117,8 @@ test('the T3 Code app opens to pairing, then OK approves the waiting agent', asy
   await expect(address).toBeFocused();
   await address.fill(`${server}/pair#token=ABCD-EFGH-JKLM`);
   await page.getByRole('button', { name: 'Pair', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('Paired with T3 Code');
+  // The toast can share the screen with the "Connecting…" status.
+  await expect(page.getByRole('status').filter({ hasText: 'Paired with T3 Code' })).toBeVisible();
 
   await expect(
     page.getByRole('heading', { name: 'Browser tests for the Agents tile' }),
@@ -141,18 +142,126 @@ test('the T3 Code app opens to pairing, then OK approves the waiting agent', asy
   expect(errors).toEqual([]);
 });
 
-test('Settings has no pairing; the connection lives in the app', async ({ page }) => {
-  await mockT3(page);
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await expect(page.getByLabel('T3 Code address')).toHaveCount(0);
+async function pair(page: Page) {
   await page.getByRole('button', { name: 'Apps', exact: true }).click();
   await page.getByRole('button', { name: 'Open T3 Code', exact: true }).click();
   await page.getByLabel('T3 Code address').fill(server);
   await page.getByLabel('Pairing code').fill('ABCDEFGHJKLM');
   await page.getByRole('button', { name: 'Pair', exact: true }).click();
+}
+
+test('Settings has no pairing; the connection lives in the app', async ({ page }) => {
+  await mockT3(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await expect(page.getByLabel('T3 Code address')).toHaveCount(0);
+  await pair(page);
   await page.locator('[data-focusable="agents-connection"]').click();
   await expect(page.getByRole('dialog')).toContainText('workstation');
   await page.getByRole('button', { name: /Unpair/ }).click();
   await expect(page.getByLabel('T3 Code address')).toBeVisible();
+});
+
+const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60000).toISOString();
+const inboxThread = (
+  id: string,
+  projectId: string,
+  title: string,
+  patch: Record<string, unknown>,
+) => ({
+  ...shellSnapshot.snapshot.threads[0],
+  id,
+  projectId,
+  title,
+  status: 'completed',
+  activityRunStatus: null,
+  activeRunId: null,
+  pendingRuntimeRequest: null,
+  latestVisibleMessage: null,
+  createdAt: minutesAgo(600),
+  updatedAt: minutesAgo(5),
+  ...patch,
+});
+const inboxSnapshot = {
+  kind: 'snapshot',
+  snapshot: {
+    snapshotSequence: 5,
+    projects: [
+      { id: 'p1', title: 'luma' },
+      { id: 'p2', title: 't3code' },
+      { id: 'p3', title: 'configs' },
+    ],
+    threads: [
+      inboxThread('ask', 'p1', 'Which overlay permission should the Fire TV shell request?', {
+        status: 'running',
+        activityRunStatus: 'waiting',
+        pendingRuntimeRequest: { id: 'r2', kind: 'user_input', createdAt: minutesAgo(4) },
+      }),
+      inboxThread('approve', 'p1', 'Run the agents inbox browser tests', {
+        status: 'running',
+        activityRunStatus: 'waiting',
+        pendingRuntimeRequest: { id: 'r1', kind: 'command', createdAt: minutesAgo(20) },
+      }),
+      inboxThread('scroll', 'p2', 'Fix settings scrolling from wider gutter areas', {
+        updatedAt: minutesAgo(62),
+      }),
+      inboxThread('dns', 'p3', 'Cloudflare DNS lookup and preview record for the staging domain', {
+        updatedAt: minutesAgo(75),
+        settledAt: minutesAgo(70),
+      }),
+      inboxThread('keys', 'p3', 'Sync Hyprland keybindings with the Mac', {
+        status: 'failed',
+        updatedAt: minutesAgo(130),
+      }),
+      inboxThread('inbox', 'p1', 'Agents inbox panel for Luma', {
+        status: 'running',
+        activeRunId: 'run-2',
+        latestRunStartedAt: minutesAgo(12),
+        updatedAt: minutesAgo(0),
+      }),
+      inboxThread('old', 'p2', 'Last week’s thread stays out of the inbox', {
+        updatedAt: minutesAgo(60 * 24 * 7),
+      }),
+    ],
+  },
+};
+
+test('the inbox groups threads, the remote moves through them and OK opens one', async ({
+  page,
+}) => {
+  await mockT3(page, inboxSnapshot);
+  await page.goto('/');
+  await pair(page);
+
+  const button = page.locator('[data-focusable="agents-inbox"]');
+  await expect(button).toHaveAccessibleName('Inbox 2 waiting for you');
+  await button.focus();
+  await page.keyboard.press('Enter');
+  const inbox = page.getByRole('dialog', { name: 'Inbox' });
+  await expect(inbox.getByRole('heading')).toHaveText(['Inbox', 'Needs you', 'Done', 'Working']);
+  await expect(inbox.getByRole('button')).toHaveText([
+    /^Run the agents inbox browser tests/,
+    /^Which overlay permission/,
+    /^Fix settings scrolling/,
+    /^Cloudflare DNS lookup/,
+    /^Sync Hyprland keybindings/,
+    /^Agents inbox panel for Luma/,
+  ]);
+
+  // Back closes it and hands focus back to the button that opened it.
+  await expect(inbox.getByRole('button').first()).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(inbox).toBeHidden();
+  await expect(button).toBeFocused();
+
+  // Down crosses from Needs you into Done; OK opens that thread.
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await expect(inbox.getByRole('button', { name: /^Fix settings scrolling/ })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(inbox).toBeHidden();
+  await expect(
+    page.getByRole('heading', { name: 'Fix settings scrolling from wider gutter areas' }),
+  ).toBeVisible();
 });

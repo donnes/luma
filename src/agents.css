@@ -860,7 +860,8 @@
 }
 
 /* Opens the full T3 Code app; labelled, since the bare mark reads as the tile. */
-.open-t3-button {
+.open-t3-button,
+.inbox-button {
   width: auto;
   padding: 0 1.25rem 0 0.95rem;
   border-radius: 2rem;
@@ -874,4 +875,46 @@
 .open-t3-button svg {
   width: 1.7rem;
   height: 1.7rem;
+}
+.inbox-button {
+  padding-left: 1.05rem;
+}
+.inbox-button svg {
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-right: 0.15rem;
+}
+.inbox-button-count {
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 0.45rem;
+  margin-left: 0.2rem;
+  border-radius: 1rem;
+  background: var(--agent-amber);
+  color: #2a1d05;
+  font-size: 0.85rem;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+/* The inbox panel sits on the right, above whatever page opened it. */
+.inbox-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 2.8rem 5.25rem;
+  background: linear-gradient(90deg, #080b1259 0%, #080b12b3 55%);
+  animation: fade-in 0.12s ease-out;
+}
+.reduce-motion .inbox-layer {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .inbox-layer {
+    animation: none;
+  }
 }
