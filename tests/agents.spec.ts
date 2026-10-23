@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import { test, expect, type Page, type Route, type WebSocketRoute } from '@playwright/test';
 
 // A stand-in T3 Code server: the HTTP pairing endpoints plus the Effect RPC
 // WebSocket, answering just enough to show one agent waiting for approval.
@@ -56,8 +56,16 @@ const threadSnapshot = {
   },
 };
 
-async function mockT3(page: Page, shell: object = shellSnapshot) {
+// `shellSent` and `threadSent` hold back those snapshots; `down()` takes the
+// server off the network.
+async function mockT3(
+  page: Page,
+  shell: object = shellSnapshot,
+  { shellSent, threadSent }: { shellSent?: Promise<void>; threadSent?: Promise<void> } = {},
+) {
   const commands: Record<string, unknown>[] = [];
+  let up = true;
+  const sockets: WebSocketRoute[] = [];
   const json = (route: Route, body: unknown) =>
     route.fulfill({
       status: 200,
@@ -69,6 +77,7 @@ async function mockT3(page: Page, shell: object = shellSnapshot) {
       body: JSON.stringify(body),
     });
   await page.route(`${server}/**`, (route) => {
+    if (!up) return route.abort('connectionrefused');
     const url = new URL(route.request().url());
     if (route.request().method() === 'OPTIONS') return json(route, {});
     if (url.pathname === '/.well-known/t3/environment')
@@ -84,15 +93,20 @@ async function mockT3(page: Page, shell: object = shellSnapshot) {
     return route.fulfill({ status: 404 });
   });
   await page.routeWebSocket(/192\.168\.50\.5:3773\/ws/, (socket) => {
+    sockets.push(socket);
     const reply = (message: object) => socket.send(JSON.stringify(message));
     socket.onMessage((raw) => {
       const message = JSON.parse(String(raw));
       if (message._tag !== 'Request') return;
       const { id, tag, payload } = message;
       if (tag === 'orchestration.subscribeShell')
-        reply({ _tag: 'Chunk', requestId: id, values: [shell] });
+        void (shellSent ?? Promise.resolve()).then(() =>
+          reply({ _tag: 'Chunk', requestId: id, values: [shell] }),
+        );
       else if (tag === 'orchestration.subscribeThread')
-        reply({ _tag: 'Chunk', requestId: id, values: [threadSnapshot] });
+        void (threadSent ?? Promise.resolve()).then(() =>
+          reply({ _tag: 'Chunk', requestId: id, values: [threadSnapshot] }),
+        );
       else if (tag === 'server.getConfig')
         reply({ _tag: 'Exit', requestId: id, exit: { _tag: 'Success', value: {} } });
       else if (tag === 'orchestration.dispatchCommand') {
@@ -101,13 +115,17 @@ async function mockT3(page: Page, shell: object = shellSnapshot) {
       }
     });
   });
-  return commands;
+  const down = async () => {
+    up = false;
+    for (const socket of sockets) await socket.close();
+  };
+  return { commands, down };
 }
 
 test('the T3 Code app opens to pairing, then OK approves the waiting agent', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  const commands = await mockT3(page);
+  const { commands } = await mockT3(page);
   await page.goto('/');
 
   // Unpaired, the app lives in the library and opens straight to the pairing box.
@@ -311,6 +329,80 @@ test('without a pairing the inbox still opens and says where to pair', async ({ 
   await expect(page.getByRole('button', { name: 'Open Netflix', exact: true })).toBeFocused();
 });
 
+test('Samsung Tools and the red key open the inbox, Samsung Back closes it', async ({ page }) => {
+  await page.goto('/');
+  const netflix = page.getByRole('button', { name: 'Open Netflix', exact: true });
+  await expect(netflix).toBeFocused();
+  // A keyboard can't send these codes; send them the way the TV does.
+  const press = (keyCode: number) =>
+    page.evaluate((keyCode) => {
+      const init = { key: 'Unidentified', keyCode, bubbles: true, cancelable: true };
+      document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', init));
+    }, keyCode);
+  const inbox = page.getByRole('dialog', { name: 'Inbox' });
+  for (const open of [10135, 403]) {
+    await press(open);
+    await expect(inbox).toBeVisible();
+    await press(10009);
+    await expect(inbox).toBeHidden();
+  }
+  await expect(netflix).toBeFocused();
+});
+
+test('Menu opens the inbox from a text field, where M still types', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Apps', exact: true }).click();
+  const search = page.getByRole('searchbox', { name: 'Find an app' });
+  await search.focus();
+  await page.keyboard.type('m');
+  await expect(search).toHaveValue('m');
+  await page.keyboard.press('ContextMenu');
+  const inbox = page.getByRole('dialog', { name: 'Inbox' });
+  await expect(inbox).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(inbox).toBeHidden();
+  await expect(search).toBeFocused();
+});
+
+test('rows that arrive over the Agents page keep focus from the page behind', async ({ page }) => {
+  let send = () => {};
+  await mockT3(page, shellSnapshot, {
+    shellSent: new Promise((resolve) => (send = resolve)),
+    // Nothing re-renders the panel after the page's deferred focus.
+    threadSent: new Promise(() => {}),
+  });
+  await page.goto('/');
+  await pair(page);
+  await expect(page.locator('main')).toContainText('Connecting to workstation…');
+  await page.keyboard.press('ContextMenu');
+  const inbox = page.getByRole('dialog', { name: 'Inbox' });
+  await expect(inbox).toContainText('Connecting to workstation…');
+
+  send();
+  const row = inbox.getByRole('button', { name: /^Browser tests for the Agents tile,/ });
+  await expect(row).toBeVisible();
+  await expect(page.locator('main .spotlight')).toBeVisible();
+  await expect(row).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(inbox).toBeHidden();
+  await expect(page.locator('.conversation')).toBeVisible();
+});
+
+test('offline, the inbox says so above the threads it last saw', async ({ page }) => {
+  const { down } = await mockT3(page, inboxSnapshot);
+  await page.goto('/');
+  await pair(page);
+  await page.keyboard.press('ContextMenu');
+  const inbox = page.getByRole('dialog', { name: 'Inbox' });
+  const row = inbox.getByRole('button', { name: /^Run the agents inbox browser tests,/ });
+  await expect(row).toBeFocused();
+  await expect(inbox.getByRole('status')).toHaveCount(0);
+
+  await down();
+  await expect(inbox.getByRole('status')).toHaveText(/T3 Code is out of reach\./);
+  await expect(row).toBeFocused();
+});
+
 test('the inbox panel moves, opens and closes with the remote on its own', async ({ page }) => {
   await page.route('**/inbox-standalone.html', (route) =>
     route.fulfill({
@@ -345,18 +437,27 @@ test('rows that arrive after the panel opened take focus', async ({ page }) => {
   await expect(inbox.getByRole('button', { name: /^approve,/ })).toBeFocused();
 });
 
-test('going back up a tall group keeps its first row in view', async ({ page }) => {
+test('the list scrolls a tall group with the remote and back to its first row', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1920, height: 600 });
+  // As tall as the window, the way an overlay window is, so the list scrolls.
   await page.route('**/inbox-standalone.html?tall', (route) =>
     route.fulfill({
       contentType: 'text/html',
-      body: '<!doctype html><div id="root"></div><script type="module" src="/tests/inbox-standalone.tsx"></script>',
+      body: '<!doctype html><div id="root" style="height: 100vh"></div><script type="module" src="/tests/inbox-standalone.tsx"></script>',
     }),
   );
   await page.goto('/inbox-standalone.html?tall');
-  const first = page.getByRole('dialog', { name: 'Inbox' }).getByRole('button', { name: /^ask0,/ });
+  const inbox = page.getByRole('dialog', { name: 'Inbox' });
+  const first = inbox.getByRole('button', { name: /^ask0,/ });
+  const later = inbox.getByRole('button', { name: /^ask12,/ });
   await expect(first).toBeFocused();
+  await expect(later).not.toBeInViewport();
   for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowDown');
+  await expect(later).toBeFocused();
+  await expect(later).toBeInViewport({ ratio: 1 });
+  await expect(first).not.toBeInViewport();
   for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowUp');
   await expect(first).toBeFocused();
   await expect(first).toBeInViewport({ ratio: 1 });

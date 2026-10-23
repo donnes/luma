@@ -35,3 +35,8 @@ export async function launchApp(id: string): Promise<void> {
 export function platformBack(): void {
   return platform().platformBack();
 }
+
+/** Asks the platform to deliver the remote keys Luma uses beyond the defaults. */
+export function registerRemoteKeys(): void {
+  if (tizen.isTV()) tizen.registerRemoteKeys();
+}

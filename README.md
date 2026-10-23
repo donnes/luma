@@ -73,6 +73,8 @@ Luma can pair with [T3 Code](https://github.com/pingdotgg/t3code) to show your c
 
 Press the remote's Menu (≡) button on any Luma page to open the inbox: every thread that needs you, finished in the last day or is still working. OK opens one. Back or Menu closes it. To pin, hide or move an app, hold OK on its tile.
 
+On a Samsung TV, press Tools or the red button instead. A Smart Remote has no Tools button; press its 123 or color button and pick red on the screen.
+
 Until it's paired, the app opens to its pairing screen:
 
 1. In T3 Code, open **Settings → Connections** and create a pairing link. The T3 Code server must listen on your network, not only on `127.0.0.1`, and your firewall must allow its port (3773 by default) from the TV.

@@ -23,6 +23,7 @@ const config = `<?xml version="1.0" encoding="UTF-8"?>
   <tizen:setting screen-orientation="landscape" background-support="disable" encryption="disable" install-location="auto"/>
   <tizen:privilege name="http://tizen.org/privilege/application.launch"/>
   <tizen:privilege name="http://tizen.org/privilege/application.info"/>
+  <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
 </widget>
 `;
 

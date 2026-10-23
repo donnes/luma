@@ -70,6 +70,23 @@ test('agent status matches T3 Code: questions and approvals need you, auth refre
     'starting',
   );
   assert.equal(agentStatus(thread('a', { status: 'interrupted' })), 'idle');
+  // A finished parent waiting on its subagents is still working; a leftover
+  // background command doesn't keep it from being done.
+  assert.equal(
+    agentStatus(
+      thread('a', {
+        status: 'completed',
+        pendingBackgroundTasks: [{ kind: 'command' }, { kind: 'subagent' }],
+      }),
+    ),
+    'running',
+  );
+  assert.equal(
+    agentStatus(
+      thread('a', { status: 'completed', pendingBackgroundTasks: [{ kind: 'command' }] }),
+    ),
+    'done',
+  );
 });
 
 test('the shelf puts the longest-waiting request first and drops settled, old and subagent threads', () => {

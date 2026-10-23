@@ -3,7 +3,7 @@ import { agentSince, isWorking, type Agent, type Inbox } from '../../agents/mode
 import { useAgents } from '../../agents/use-agents';
 import { canOpenT3Code, openT3Code, threadPath } from '../../agents/web-client';
 import { useTranslation, type MessageKey } from '../../i18n';
-import { isMenuKey } from '../../navigation';
+import { isBackKey, isMenuKey } from '../../navigation';
 import { T3Glyph } from './agents-mark';
 import { elapsed } from './format';
 import { statusLabels } from './parts';
@@ -17,7 +17,7 @@ const groups: { key: keyof Inbox; label: MessageKey }[] = [
 
 /**
  * The inbox the Menu button brings up over any page: the paired server's
- * threads, or a line on why there are none and where to fix that. A thread
+ * threads, under a line on why they're missing or may be out of date. A thread
  * opens in T3 Code's web app where the shell hosts it, otherwise in Luma's
  * own conversation view.
  */
@@ -34,15 +34,21 @@ export function AgentsInbox({
   const { state, inbox } = useAgents();
   const { pairing } = state;
   const server = pairing?.label || 'T3 Code';
+  const expired = state.status === 'expired';
+  // Threads from the last snapshot stay listed while the connection is down.
   const notice: Notice | undefined = !pairing
     ? { title: t('agentsPairTitle'), body: t('agentsInboxPair') }
-    : state.status === 'expired'
+    : expired
       ? { title: t('agentsExpiredTitle'), body: t('agentsInboxPair') }
-      : state.shell.ready
-        ? undefined
-        : state.status === 'offline'
-          ? { title: t('agentsOfflineTitle'), body: t('agentsInboxOffline') }
-          : { title: t('agentsConnecting', { server }) };
+      : state.status === 'offline'
+        ? { title: t('agentsOfflineTitle'), body: t('agentsInboxOffline') }
+        : state.status === 'connected'
+          ? undefined
+          : {
+              title: state.shell.ready
+                ? t('agentsReconnecting')
+                : t('agentsConnecting', { server }),
+            };
   return (
     <div
       className="inbox-layer"
@@ -52,7 +58,7 @@ export function AgentsInbox({
       }}
     >
       <InboxPanel
-        inbox={inbox}
+        inbox={expired ? noThreads : inbox}
         source={pairing?.label || undefined}
         notice={notice}
         onOpen={(threadId) => {
@@ -68,6 +74,8 @@ export function AgentsInbox({
     </div>
   );
 }
+
+const noThreads: Inbox = { needsYou: [], done: [], working: [] };
 
 interface Notice {
   title: string;
@@ -87,7 +95,7 @@ export function InboxPanel({
   inbox: Inbox;
   /** Where the threads come from, such as the paired server's name. */
   source?: string;
-  /** Shown instead of the threads, such as while there's no connection. */
+  /** Shown above the threads, such as while there's no connection. */
   notice?: Notice;
   onOpen: (threadId: string) => void;
   onClose: () => void;
@@ -156,8 +164,7 @@ export function InboxPanel({
       const list = rows();
       const index = list.findIndex((row) => row === document.activeElement);
       if (
-        event.key === 'Escape' ||
-        event.keyCode === 461 ||
+        isBackKey(event) ||
         (event.key === 'Backspace' && !(event.target instanceof HTMLInputElement)) ||
         isMenuKey(event)
       ) {
@@ -196,7 +203,8 @@ export function InboxPanel({
             <p>{notice.title}</p>
             {notice.body ? <p>{notice.body}</p> : null}
           </div>
-        ) : shown.length ? (
+        ) : null}
+        {shown.length ? (
           shown.map((group) => (
             <section key={group.key} className="inbox-group" aria-labelledby={`inbox-${group.key}`}>
               <h3 id={`inbox-${group.key}`}>{t(group.label)}</h3>
@@ -207,7 +215,7 @@ export function InboxPanel({
               </ul>
             </section>
           ))
-        ) : (
+        ) : notice ? null : (
           <p className="inbox-empty">{t('agentsQuietTitle')}</p>
         )}
       </div>

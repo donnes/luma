@@ -38,12 +38,15 @@ import { ReplyDialog } from './reply-dialog';
 import { elapsed } from './format';
 import { ApprovalPills, isQuickQuestion, Pill, QuickAnswerPills } from './requests';
 
+// Deferred a frame, by which time the inbox or a dialog may have opened over
+// the page; those keep the remote.
 const focusPrimary = () =>
-  requestAnimationFrame(() =>
+  requestAnimationFrame(() => {
+    if (document.querySelector('[data-focus-scope="dialog"]')) return;
     document
       .querySelector<HTMLElement>('main [data-primary]:not([disabled]), main .spotlight .pill')
-      ?.focus({ preventScroll: true }),
-  );
+      ?.focus({ preventScroll: true });
+  });
 
 interface Props {
   conversation: string | null;

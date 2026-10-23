@@ -23,7 +23,7 @@ import { AmbientClock, Clock, Greeting } from './components/clock';
 import { Navigation } from './components/navigation';
 import { defaultFavorites, sortApps } from './catalog';
 import { isTV, launchApp, loadInventory, platformBack } from './bridge';
-import { isMenuKey, moveFocus, type Direction } from './navigation';
+import { isBackKey, isMenuKey, moveFocus, type Direction } from './navigation';
 import { loadPreferences, savePreferences } from './storage';
 import { wallpapers } from './wallpapers';
 import { moveFavorite } from './favorites';
@@ -364,11 +364,7 @@ function Launcher({
         return;
       }
       const editable = event.target instanceof HTMLInputElement;
-      if (
-        event.key === 'Escape' ||
-        event.keyCode === 461 ||
-        (!editable && event.key === 'Backspace')
-      ) {
+      if (isBackKey(event) || (!editable && event.key === 'Backspace')) {
         event.preventDefault();
         if (!event.repeat) actions.current.back();
         return;
@@ -391,6 +387,12 @@ function Launcher({
         }
         return;
       }
+      // Ahead of the text-field check: the remote's Menu works while typing.
+      if (isMenuKey(event)) {
+        event.preventDefault();
+        if (!event.repeat) actions.current.menu();
+        return;
+      }
       const languageOption = (event.target as HTMLElement | null)?.dataset.focusable?.startsWith(
         'language-option-',
       );
@@ -403,11 +405,6 @@ function Launcher({
       if (directions[event.key]) {
         event.preventDefault();
         moveFocus(directions[event.key]);
-        return;
-      }
-      if (isMenuKey(event)) {
-        event.preventDefault();
-        if (!event.repeat) actions.current.menu();
         return;
       }
       if (event.key === 'Enter' || event.keyCode === 13) {

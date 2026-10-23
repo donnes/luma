@@ -1,5 +1,6 @@
 import type {
   ApprovalDecision,
+  BackgroundTaskKind,
   ProjectShell,
   RequestKind,
   RuntimeRequest,
@@ -13,6 +14,8 @@ import type {
 
 export type AgentStatus = 'input' | 'approval' | 'starting' | 'running' | 'done' | 'error' | 'idle';
 
+const holdsCompletion = new Set<BackgroundTaskKind>(['subagent', 'monitor', 'background_task']);
+
 // Mirrors T3 Code's packages/shared/src/agentAwareness.ts so the TV and the
 // desktop agree on which agents are waiting for you.
 export function agentStatus(thread: ThreadShell): AgentStatus {
@@ -25,7 +28,12 @@ export function agentStatus(thread: ThreadShell): AgentStatus {
     return 'approval';
   if (run === 'preparing' || run === 'starting') return 'starting';
   if (run === 'running' || run === 'waiting') return 'running';
-  if (run === 'completed') return 'done';
+  // A finished run still waiting on subagents, monitors or background tasks
+  // is working. Plain background commands don't hold it.
+  if (run === 'completed')
+    return thread.pendingBackgroundTasks?.some((task) => holdsCompletion.has(task.kind))
+      ? 'running'
+      : 'done';
   if (run === 'failed') return 'error';
   return 'idle';
 }

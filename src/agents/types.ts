@@ -36,6 +36,14 @@ export interface ProjectShell {
   title: string;
 }
 
+// T3 Code may add kinds; unknown ones don't hold a thread's completion.
+export type BackgroundTaskKind =
+  | 'subagent'
+  | 'command'
+  | 'monitor'
+  | 'background_task'
+  | (string & {});
+
 export interface ThreadShell {
   id: string;
   projectId: string;
@@ -53,6 +61,8 @@ export interface ThreadShell {
   } | null;
   latestVisibleMessage: { role: string; text: string; updatedAt: string } | null;
   latestRunStartedAt?: string | null;
+  /** Work a finished run left running, such as subagents. Older servers omit it. */
+  pendingBackgroundTasks?: { kind: BackgroundTaskKind }[];
   createdAt: string;
   branch: string | null;
   lineage?: { relationshipToParent: 'fork' | 'subagent' | null };
