@@ -180,6 +180,21 @@ test('Settings has no pairing; the connection lives in the app', async ({ page }
   await expect(page.getByLabel('T3 Code address')).toBeVisible();
 });
 
+test('Samsung Back closes the connection dialog without leaving the app', async ({ page }) => {
+  await mockT3(page);
+  await page.goto('/');
+  await pair(page);
+  const connection = page.locator('[data-focusable="agents-connection"]');
+  await connection.click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.evaluate(() => {
+    const init = { key: 'Unidentified', keyCode: 10009, bubbles: true, cancelable: true };
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', init));
+  });
+  await expect(page.getByRole('dialog')).toBeHidden();
+  await expect(connection).toBeVisible();
+});
+
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60000).toISOString();
 const inboxThread = (
   id: string,

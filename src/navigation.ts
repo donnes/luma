@@ -7,7 +7,8 @@ export type Direction = 'left' | 'right' | 'up' | 'down';
 const backCodes = new Set([461, 10009]);
 const menuCodes = new Set([457, 10135, 403]);
 
-export const isBackKey = (event: KeyboardEvent) =>
+/** Takes DOM and React key events alike. */
+export const isBackKey = (event: Pick<KeyboardEvent, 'key' | 'keyCode'>) =>
   event.key === 'Escape' || backCodes.has(event.keyCode);
 
 /** The remote's Menu button, or M on a keyboard outside a text field. */
