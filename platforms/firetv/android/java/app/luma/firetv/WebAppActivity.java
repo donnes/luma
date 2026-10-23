@@ -19,6 +19,9 @@ import android.webkit.WebViewClient;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.Locale;
 import org.json.JSONObject;
 
 /**
@@ -71,7 +74,7 @@ public class WebAppActivity extends Activity {
   private void load(Intent intent) {
     String url = intent.getStringExtra(EXTRA_URL);
     then = intent.getStringExtra(EXTRA_THEN);
-    origin = origin(Uri.parse(url));
+    origin = origin(url);
     handoff = "/pair".equals(Uri.parse(url).getPath());
     webView.loadUrl(url);
   }
@@ -105,11 +108,24 @@ public class WebAppActivity extends Activity {
         });
   }
 
-  /** scheme://host:port, or "" for anything that isn't http(s). */
-  private static String origin(Uri uri) {
-    String scheme = uri.getScheme();
-    if (!"http".equals(scheme) && !"https".equals(scheme) || uri.getHost() == null) return "";
-    return scheme + "://" + uri.getHost().toLowerCase() + ":" + uri.getPort();
+  /**
+   * scheme://host:port, or "" for anything that isn't http(s) or doesn't parse.
+   * java.net.URI, because Android 9's Uri cuts IPv6 hosts at the first colon,
+   * which would make different Tailscale addresses look like one origin.
+   */
+  private static String origin(String url) {
+    try {
+      URI uri = new URI(url);
+      String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+      int port = uri.getPort();
+      if ("http".equals(scheme)) port = port == -1 ? 80 : port;
+      else if ("https".equals(scheme)) port = port == -1 ? 443 : port;
+      else return "";
+      if (uri.getHost() == null) return "";
+      return scheme + "://" + uri.getHost().toLowerCase(Locale.ROOT) + ":" + port;
+    } catch (URISyntaxException e) {
+      return "";
+    }
   }
 
   @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
@@ -136,7 +152,7 @@ public class WebAppActivity extends Activity {
             // Also called for server redirects. Downloads, mailto: and other
             // apps' links have nowhere to go on the TV, and other sites
             // mustn't load with the pairing code or the TV adjustments.
-            String target = origin(request.getUrl());
+            String target = origin(request.getUrl().toString());
             return target.isEmpty() || request.isForMainFrame() && !target.equals(origin);
           }
 
