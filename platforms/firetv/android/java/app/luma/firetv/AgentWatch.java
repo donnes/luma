@@ -139,7 +139,10 @@ final class AgentWatch {
    */
   private static synchronized void write(Context context, String name, String content) {
     File file = new File(context.getFilesDir(), name);
-    File temporary = new File(context.getFilesDir(), name + ".tmp");
+    // Per process: Luma's page and HomeGuard both write the alert history
+    // while HomeGuard is being turned on or off.
+    File temporary =
+        new File(context.getFilesDir(), name + "." + android.os.Process.myPid() + ".tmp");
     try (FileOutputStream out = new FileOutputStream(temporary)) {
       out.write(content.getBytes(StandardCharsets.UTF_8));
       out.getFD().sync();

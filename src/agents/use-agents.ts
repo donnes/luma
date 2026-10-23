@@ -69,7 +69,6 @@ export function useAgentAlerts() {
     let pairing: Pairing | null | undefined;
     // The history while this page finds alerts itself; undefined while
     // HomeGuard does and keeps it.
-    let seen: string[] | null | undefined;
     const sync = (alerts: AgentAlert[], ended: Iterable<string> = []) => {
       const gone = new Set(ended);
       setQueue((queued) => {
@@ -114,14 +113,14 @@ export function useAgentAlerts() {
         shell = state.shell;
         // HomeGuard can be turned on or off while the page lives on, so who
         // alerts is decided each time.
-        if (canAlertOverApps()) seen = undefined;
-        else {
-          // HomeGuard may have kept the history until now.
-          const before = seen === undefined ? loadSeen() : seen;
+        if (!canAlertOverApps()) {
+          // Read every time: HomeGuard may have kept the history since the
+          // last update. Toggling HomeGuard can still repeat one alert while
+          // the page lags behind its stream, which is rare enough to accept.
+          const before = loadSeen();
           const taken = takeAlerts(shell, before);
           if (taken.seen !== before) saveSeen(taken.seen);
-          seen = taken.seen;
-          const kept = new Set(seen);
+          const kept = new Set(taken.seen);
           ended = before?.filter((id) => !kept.has(id)) ?? [];
           // This connection only runs while Luma is on screen.
           if (!document.hidden)

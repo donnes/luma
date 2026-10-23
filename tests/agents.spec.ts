@@ -635,6 +635,30 @@ test('on Fire TV, the page alerts itself once HomeGuard is turned off', async ({
   ]);
 });
 
+test('on Fire TV, the page reads what HomeGuard recorded while briefly on', async ({ page }) => {
+  await fireTV(page, ['r1']);
+  const { pushShell } = await mockT3(page);
+  await pairOnFireTV(page);
+  const toast = page.locator('.agent-toast strong');
+
+  // With HomeGuard off, the page alerts and keeps the history.
+  await page.evaluate(() => Object.assign(window, { __homeGuard: false }));
+  pushShell(asking(6, 'thread-2', 'Second opinion on the overlay', 'r5'));
+  await expect(toast).toHaveText('Second opinion on the overlay');
+
+  // HomeGuard comes on, alerts r6 itself and goes off again, all before the
+  // page hears of r6. The page must not alert it a second time.
+  await page.evaluate(() =>
+    Object.assign(window, { __homeGuard: true, __history: '["r1","r5","r6"]' }),
+  );
+  await page.evaluate(() => Object.assign(window, { __homeGuard: false }));
+  pushShell(
+    asking(7, 'thread-3', 'Pick a name for the release', 'r6'),
+    asking(8, 'thread-4', 'Review the overlay copy', 'r7'),
+  );
+  await expect(toast).toHaveText('Review the overlay copy', { timeout: 10000 });
+});
+
 test('on Fire TV, a queued alert leaves once HomeGuard sees its request end', async ({ page }) => {
   await fireTV(page, ['r1']);
   await mockT3(page);

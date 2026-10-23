@@ -136,6 +136,11 @@ public final class HomeGuard extends AccessibilityService {
             lumaVisible = true;
             lumaShownAt = SystemClock.uptimeMillis();
             uncover();
+            // Luma's page takes the queue from here; this alert was already seen.
+            if (alert != null) {
+              main.removeCallbacks(hideAlert);
+              hideAlert();
+            }
           } else if (ACTION_LUMA_HIDDEN.equals(action)) {
             lumaVisible = false;
           } else if (ACTION_WATCH_AGENTS.equals(action) && agents != null) {
