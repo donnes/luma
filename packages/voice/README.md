@@ -13,7 +13,7 @@ The service can:
 - Reply to a thread you name, as if you typed it in T3 Code.
 - Answer a pending question, or approve or deny a pending request.
 
-Approvals always wait for your yes. So do replies and answers once the assistant has read anything from your threads in the last few minutes, since an agent's message could try to steer it. Luma then reads back the exact thread and message, and acts only if your next press is a plain yes: "yes", "yeah", "yep", "sure", "confirm", "do it" or "go ahead". Anything else cancels it. The service checks the yes itself; the model can't confirm anything.
+Approvals always wait for your yes. So do replies and answers once the assistant has read anything from your threads in the last few minutes, since an agent's message could try to steer it. Luma then reads back the exact thread and message, and acts only if your next press is a plain yes: "yes", "yeah", "yep", "sure", "confirm", "do it" or "go ahead". Anything else cancels it. The service checks the yes itself; the model can't confirm anything. Luma reads an approval's command word for word, so a command that's long, spans several lines or has code in it can only be approved in T3 Code. You can still deny it by voice. If you ask again before Luma answers, only the last question it asked can be confirmed.
 
 It can't run commands, start threads or control the TV. Those requests get a spoken "I can't do that yet".
 

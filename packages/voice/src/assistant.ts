@@ -47,8 +47,11 @@ export function createAssistant(options: {
   let history: { at: number; sawThreads: boolean; items: InputItem[] }[] = [];
   /** What the previous turn asked Donald to confirm. Only the next press can. */
   let confirmable: PendingAction | null = null;
+  // Turns run one at a time, in the order they arrived.
+  let queue: Promise<unknown> = Promise.resolve();
+  let waiting = 0;
 
-  return async function handle(text: string): Promise<string> {
+  async function turn(text: string, hungUp: AbortSignal): Promise<string> {
     const now = Date.now();
     history = history.filter((turn) => now - turn.at < MEMORY_MS).slice(-MEMORY_TURNS);
     const pending = history.length ? confirmable : null;
@@ -88,12 +91,24 @@ export function createAssistant(options: {
     } finally {
       context.t3.close();
     }
-    confirmable = context.proposed;
+    // Only the question Donald heard last can be confirmed: not one his iPhone
+    // hung up on, nor one followed by a newer request.
+    if (!hungUp.aborted && !waiting) confirmable = context.proposed;
     history.push({
       at: now,
       sawThreads: context.sawThreads,
       items: [said, { role: 'assistant', content: reply }],
     });
+    return reply;
+  }
+
+  return function handle(text: string, hungUp: AbortSignal): Promise<string> {
+    waiting++;
+    const reply = queue.then(() => {
+      waiting--;
+      return turn(text, hungUp);
+    });
+    queue = reply.catch(() => {});
     return reply;
   };
 }

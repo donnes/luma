@@ -34,7 +34,8 @@ function send(response: ServerResponse, status: number, text: string) {
 
 interface Options {
   token: string;
-  handle: (text: string) => Promise<string>;
+  /** `hungUp` aborts when the client goes away before the reply. */
+  handle: (text: string, hungUp: AbortSignal) => Promise<string>;
 }
 
 async function respond(options: Options, request: IncomingMessage, response: ServerResponse) {
@@ -59,7 +60,10 @@ async function respond(options: Options, request: IncomingMessage, response: Ser
     return;
   }
   const started = Date.now();
-  const reply = await options.handle(text);
+  const hungUp = new AbortController();
+  // Also fires once the reply is sent, when aborting no longer matters.
+  response.on('close', () => hungUp.abort());
+  const reply = await options.handle(text, hungUp.signal);
   console.log(`voice: answered in ${Date.now() - started} ms`);
   send(response, 200, reply);
 }

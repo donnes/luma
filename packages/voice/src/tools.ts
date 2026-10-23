@@ -233,6 +233,9 @@ async function reply(context: ToolContext, args: { thread: string; message: stri
 
 const loose = (text: string) => words(text).join(' ');
 
+/** Longest command an approval question reads out. */
+const MAX_SPOKEN = 100;
+
 const verbs: Record<ApprovalDecision, [ask: string, done: string]> = {
   accept: ['Approve', 'Approved'],
   acceptForSession: ['Allow for this session', 'Allowed for this session'],
@@ -259,8 +262,18 @@ async function answer(
         error: 'Pick one of these decisions.',
         decisions: request.options.map((candidate) => candidate.decision),
       };
+    // Donald approves exactly what he hears, so the command is read out as is.
+    // One that can't be is approved in T3 Code instead; denying needs no detail.
+    const command = request.detail.trim();
+    const speakable =
+      command.length > 0 && command.length <= MAX_SPOKEN && !/[\r\n`]/.test(command);
+    if (!speakable && option.decision !== 'decline')
+      return {
+        error:
+          'This request is too long or complex to read aloud. Tell Donald to review it in T3 Code.',
+      };
     const [ask, done] = verbs[option.decision];
-    const what = summary(request.detail, 120) || `the ${request.requestKind} request`;
+    const what = speakable ? command : `the ${request.requestKind} request`;
     return act(context, {
       command: decideCommand(thread.id, request.requestId, option.decision),
       question: `${ask} ${what} in ${thread.title}? Say yes to confirm.`,
