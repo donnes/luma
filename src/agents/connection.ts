@@ -165,19 +165,21 @@ export class AgentsConnection {
     this.set({ status: 'connecting' });
     const now = Date.now();
     const routes = pairing.routes.filter((route) => (this.cooldown.get(route.url) ?? 0) < now);
-    const answered = await Promise.all(
+    // true: answered as this environment; false: as another one; null: silent.
+    const matches = await Promise.all(
       routes.map((route) =>
         describe(route, PROBE_MS)
           .then((environment) => environment.environmentId === pairing.environmentId)
-          .catch(() => false),
+          .catch(() => null),
       ),
     );
     if (attempt !== this.attempt) return;
     // Routes that answered as this environment first, in rank order; silent
-    // ones are a last resort since the check itself can be what's blocked.
+    // ones are a last resort since the check itself can be what's blocked. A
+    // route that answers as another environment never sees the token.
     const order = [
-      ...routes.filter((_, index) => answered[index]),
-      ...routes.filter((_, index) => !answered[index]),
+      ...routes.filter((_, index) => matches[index] === true),
+      ...routes.filter((_, index) => matches[index] === null),
     ];
     for (const route of order) {
       try {

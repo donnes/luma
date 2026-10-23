@@ -156,3 +156,51 @@ test('Settings has no pairing; the connection lives in the app', async ({ page }
   await page.getByRole('button', { name: /Unpair/ }).click();
   await expect(page.getByLabel('T3 Code address')).toBeVisible();
 });
+
+test('the token never goes to an address that answers as another server', async ({ page }) => {
+  const lan = { url: `${server}/`, kind: 'lan' };
+  const other = 'http://100.100.1.2:3773';
+  await page.addInitScript(
+    (pairing) => localStorage.setItem('luma.agents.v1', JSON.stringify(pairing)),
+    {
+      environmentId: 'env-1',
+      label: 'workstation',
+      token: 'token-1',
+      expiresAt: Date.now() + 86400000,
+      pairedOn: lan,
+      routes: [lan, { url: `${other}/`, kind: 'tailnet' }],
+    },
+  );
+  const cors = {
+    'access-control-allow-origin': '*',
+    'access-control-allow-headers': 'authorization, content-type',
+  };
+  // The paired server answers but can't mint a ticket right now.
+  await page.route(`${server}/**`, (route) => {
+    const { pathname } = new URL(route.request().url());
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ headers: cors });
+    if (pathname === '/.well-known/t3/environment')
+      return route.fulfill({
+        headers: cors,
+        json: { environmentId: 'env-1', label: 'workstation' },
+      });
+    return route.fulfill({ status: 503, headers: cors });
+  });
+  // A different T3 Code server that would reject the token.
+  const leaked: string[] = [];
+  await page.route(`${other}/**`, async (route) => {
+    const { pathname } = new URL(route.request().url());
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ headers: cors });
+    const authorization = await route.request().headerValue('authorization');
+    if (authorization) leaked.push(authorization);
+    if (pathname === '/.well-known/t3/environment')
+      return route.fulfill({ headers: cors, json: { environmentId: 'env-2', label: 'laptop' } });
+    return route.fulfill({ status: 401, headers: cors });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Apps', exact: true }).click();
+  await page.getByRole('button', { name: 'Open T3 Code', exact: true }).click();
+  await expect(page.getByText(/T3 Code is out of reach\.|Pair Luma again\./)).toBeVisible();
+  expect(leaked).toEqual([]);
+  await expect(page.getByText('T3 Code is out of reach.')).toBeVisible();
+});
