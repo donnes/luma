@@ -23,7 +23,7 @@ import { AmbientClock, Clock, Greeting } from './components/clock';
 import { Navigation } from './components/navigation';
 import { defaultFavorites, sortApps } from './catalog';
 import { isTV, launchApp, loadInventory, platformBack } from './bridge';
-import { moveFocus, type Direction } from './navigation';
+import { isMenuKey, moveFocus, type Direction } from './navigation';
 import { loadPreferences, savePreferences } from './storage';
 import { wallpapers } from './wallpapers';
 import { moveFavorite } from './favorites';
@@ -32,7 +32,7 @@ import { categoryLabel, LanguageProvider, useTranslation } from './i18n';
 import { AgentsPage } from './components/agents/agents-page';
 import { AgentsSummary } from './components/agents/agents-summary';
 import { ConnectionButton } from './components/agents/connection-button';
-import { InboxButton } from './components/agents/inbox-button';
+import { AgentsInbox } from './components/agents/inbox';
 import { OpenT3Button } from './components/agents/open-t3-button';
 import { AGENTS_APP_ID, useAgentsLifecycle } from './agents/use-agents';
 import { repairT3Code } from './agents/web-client';
@@ -287,13 +287,13 @@ function Launcher({
 
   const actions = useRef<{
     back: () => void;
-    options: () => void;
+    menu: () => void;
     hold: () => void;
     reorder: (key: string) => boolean;
     wake: () => boolean;
   }>({
     back: () => {},
-    options: () => {},
+    menu: () => {},
     hold: () => {},
     reorder: () => false,
     wake: () => false,
@@ -325,17 +325,14 @@ function Launcher({
         }
         platformBack();
       },
-      options: () => {
-        const id = (document.activeElement as HTMLElement | null)?.dataset.appId;
-        if (!optionsApp && id && appMap.has(id)) onOptions(appMap.get(id)!);
+      // The inbox closes itself on Menu; dialogs keep the remote until they close.
+      menu: () => {
+        if (!document.querySelector('[data-focus-scope="dialog"]')) setInbox(true);
       },
       hold: () => {
-        const node = document.activeElement as HTMLElement | null;
-        const app = node?.dataset.appId ? appMap.get(node.dataset.appId) : undefined;
-        if (!app || optionsApp) return;
-        if (page === 'home' && node?.dataset.focusable?.startsWith('favorite-'))
-          startReordering(app);
-        else onOptions(app);
+        const id = (document.activeElement as HTMLElement | null)?.dataset.appId;
+        const app = id ? appMap.get(id) : undefined;
+        if (app && !optionsApp) onOptions(app);
       },
       reorder: (key) => {
         if (!reordering) return false;
@@ -408,9 +405,9 @@ function Launcher({
         moveFocus(directions[event.key]);
         return;
       }
-      if (event.key === 'ContextMenu' || event.keyCode === 457 || event.key.toLowerCase() === 'm') {
+      if (isMenuKey(event)) {
         event.preventDefault();
-        actions.current.options();
+        if (!event.repeat) actions.current.menu();
         return;
       }
       if (event.key === 'Enter' || event.keyCode === 13) {
@@ -461,7 +458,6 @@ function Launcher({
       reordering={prefix === 'favorite' && reordering === app.id}
       onLaunch={onLaunch}
       onOptions={onOptions}
-      onHold={prefix === 'favorite' ? startReordering : undefined}
     />
   );
   const wallpaper = wallpapers.find((item) => item.id === preferences.wallpaper) ?? wallpapers[0];
@@ -511,7 +507,6 @@ function Launcher({
             <div className="header-right">
               {page === 'agents' ? (
                 <>
-                  <InboxButton onOpen={() => setInbox(true)} />
                   <OpenT3Button notify={notify} />
                   <ConnectionButton />
                 </>
@@ -763,8 +758,6 @@ function Launcher({
               <AgentsPage
                 conversation={conversation}
                 onConversation={setConversation}
-                inbox={inbox}
-                onInbox={setInbox}
                 backRef={agentsBack}
                 notify={notify}
                 onPaired={() => {
@@ -820,7 +813,7 @@ function Launcher({
                     ) : null}
                     <span>
                       <span className="keycap">Back</span>
-                      {inbox ? t('close') : conversation ? t('agents') : t('homeLabel')}
+                      {conversation ? t('agents') : t('homeLabel')}
                     </span>
                   </>
                 ) : reordering ? (
@@ -884,6 +877,15 @@ function Launcher({
           key="options"
           app={optionsApp}
           favorites={favoriteIds}
+          // Every tile on Home is a favorite; moving one starts from its options.
+          onMove={
+            page === 'home'
+              ? () => {
+                  setOptionsApp(null);
+                  startReordering(optionsApp);
+                }
+              : undefined
+          }
           hidden={preferences.hidden.includes(optionsApp.id)}
           onClose={() => setOptionsApp(null)}
           onPin={() => {
@@ -918,6 +920,16 @@ function Launcher({
                 : t('appHidden', { app: optionsApp.title }),
             );
           }}
+        />
+      ) : null}
+      {inbox ? (
+        <AgentsInbox
+          onClose={() => setInbox(false)}
+          onConversation={(threadId) => {
+            openPage('agents');
+            setConversation(threadId);
+          }}
+          notify={notify}
         />
       ) : null}
       {toast ? (

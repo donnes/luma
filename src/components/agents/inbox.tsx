@@ -1,6 +1,9 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { agentSince, isWorking, type Agent, type Inbox } from '../../agents/model';
+import { useAgents } from '../../agents/use-agents';
+import { canOpenT3Code, openT3Code, threadPath } from '../../agents/web-client';
 import { useTranslation, type MessageKey } from '../../i18n';
+import { isMenuKey } from '../../navigation';
 import { T3Glyph } from './agents-mark';
 import { elapsed } from './format';
 import { statusLabels } from './parts';
@@ -12,18 +15,80 @@ const groups: { key: keyof Inbox; label: MessageKey }[] = [
   { key: 'working', label: 'agentWorking' },
 ];
 
+/**
+ * The inbox the Menu button brings up over any page: the paired server's
+ * threads, or a line on why there are none and where to fix that. A thread
+ * opens in T3 Code's web app where the shell hosts it, otherwise in Luma's
+ * own conversation view.
+ */
+export function AgentsInbox({
+  onConversation,
+  onClose,
+  notify,
+}: {
+  onConversation: (threadId: string) => void;
+  onClose: () => void;
+  notify: (text: string, error?: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const { state, inbox } = useAgents();
+  const { pairing } = state;
+  const server = pairing?.label || 'T3 Code';
+  const notice: Notice | undefined = !pairing
+    ? { title: t('agentsPairTitle'), body: t('agentsInboxPair') }
+    : state.status === 'expired'
+      ? { title: t('agentsExpiredTitle'), body: t('agentsInboxPair') }
+      : state.shell.ready
+        ? undefined
+        : state.status === 'offline'
+          ? { title: t('agentsOfflineTitle'), body: t('agentsInboxOffline') }
+          : { title: t('agentsConnecting', { server }) };
+  return (
+    <div
+      className="inbox-layer"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <InboxPanel
+        inbox={inbox}
+        source={pairing?.label || undefined}
+        notice={notice}
+        onOpen={(threadId) => {
+          onClose();
+          if (canOpenT3Code() && pairing)
+            void openT3Code(threadPath(pairing.environmentId, threadId)).catch(() =>
+              notify(t('agentsWebFailed'), true),
+            );
+          else onConversation(threadId);
+        }}
+        onClose={onClose}
+      />
+    </div>
+  );
+}
+
+interface Notice {
+  title: string;
+  body?: string;
+}
+
 // Takes everything as props, owns its styles and handles the remote itself,
 // so it works outside Luma's pages too: Up and Down move through the rows in
-// list order, OK opens one and Back closes the panel.
+// list order, OK opens one and Back or Menu closes the panel.
 export function InboxPanel({
   inbox,
   source,
+  notice,
   onOpen,
   onClose,
 }: {
   inbox: Inbox;
   /** Where the threads come from, such as the paired server's name. */
   source?: string;
+  /** Shown instead of the threads, such as while there's no connection. */
+  notice?: Notice;
   onOpen: (threadId: string) => void;
   onClose: () => void;
 }) {
@@ -92,7 +157,8 @@ export function InboxPanel({
       if (
         event.key === 'Escape' ||
         event.keyCode === 461 ||
-        (event.key === 'Backspace' && !(event.target instanceof HTMLInputElement))
+        (event.key === 'Backspace' && !(event.target instanceof HTMLInputElement)) ||
+        isMenuKey(event)
       ) {
         if (!event.repeat) onClose();
       } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
@@ -124,7 +190,12 @@ export function InboxPanel({
         {source ? <span className="inbox-source">{source}</span> : null}
       </header>
       <div className="inbox-list">
-        {shown.length ? (
+        {notice ? (
+          <div className="inbox-notice" role="status">
+            <p>{notice.title}</p>
+            {notice.body ? <p>{notice.body}</p> : null}
+          </div>
+        ) : shown.length ? (
           shown.map((group) => (
             <section key={group.key} className="inbox-group" aria-labelledby={`inbox-${group.key}`}>
               <h3 id={`inbox-${group.key}`}>{t(group.label)}</h3>

@@ -1,4 +1,8 @@
 export type Direction = 'left' | 'right' | 'up' | 'down';
+
+/** The remote's Menu (≡) button, or M on a keyboard. */
+export const isMenuKey = (event: KeyboardEvent) =>
+  event.key === 'ContextMenu' || event.keyCode === 457 || event.key.toLowerCase() === 'm';
 export interface FocusRect {
   id: string;
   x: number;

@@ -226,17 +226,17 @@ const inboxSnapshot = {
   },
 };
 
-test('the inbox groups threads, the remote moves through them and OK opens one', async ({
+test('Menu opens the inbox over any page, the remote moves through it and OK opens a thread', async ({
   page,
 }) => {
   await mockT3(page, inboxSnapshot);
   await page.goto('/');
   await pair(page);
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const settings = page.getByRole('button', { name: 'Settings', exact: true });
+  await settings.focus();
 
-  const button = page.locator('[data-focusable="agents-inbox"]');
-  await expect(button).toHaveAccessibleName('Inbox 2 waiting for you');
-  await button.focus();
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ContextMenu');
   const inbox = page.getByRole('dialog', { name: 'Inbox' });
   await expect(inbox.getByRole('heading')).toHaveText(['Inbox', 'Needs you', 'Done', 'Working']);
   await expect(inbox.getByRole('button')).toHaveText([
@@ -248,14 +248,20 @@ test('the inbox groups threads, the remote moves through them and OK opens one',
     /^Agents inbox panel for Luma/,
   ]);
 
-  // Back closes it and hands focus back to the button that opened it.
+  // Back and Menu close it, and focus goes back to where it was.
   await expect(inbox.getByRole('button').first()).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(inbox).toBeHidden();
-  await expect(button).toBeFocused();
+  await expect(settings).toBeFocused();
+  await expect(page.getByRole('region', { name: 'Luma settings', exact: true })).toBeVisible();
+  await page.keyboard.press('ContextMenu');
+  await expect(inbox).toBeVisible();
+  await page.keyboard.press('ContextMenu');
+  await expect(inbox).toBeHidden();
+  await expect(settings).toBeFocused();
 
   // Down crosses from Needs you into Done; OK opens that thread.
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ContextMenu');
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowDown');
   await expect(inbox.getByRole('button', { name: /^Fix settings scrolling/ })).toBeFocused();
@@ -266,9 +272,7 @@ test('the inbox groups threads, the remote moves through them and OK opens one',
   ).toBeVisible();
 });
 
-test('a request past the shelf opens from the inbox with its approval and counts on the badge', async ({
-  page,
-}) => {
+test('a request past the shelf opens from the inbox with its approval', async ({ page }) => {
   // Thirteen approvals: the shelf keeps the twelve that waited longest.
   const threads = Array.from({ length: 13 }, (_, index) =>
     inboxThread(`approve-${index + 1}`, 'p1', `Approval ${index + 1}`, {
@@ -281,21 +285,30 @@ test('a request past the shelf opens from the inbox with its approval and counts
   await page.goto('/');
   await pair(page);
 
-  const button = page.locator('[data-focusable="agents-inbox"]');
-  await expect(button).toHaveAccessibleName('Inbox 13 waiting for you');
-  await button.click();
-  await page
-    .getByRole('dialog', { name: 'Inbox' })
-    .getByRole('button', { name: /^Approval 13,/ })
-    .click();
+  await page.keyboard.press('ContextMenu');
+  const inbox = page.getByRole('dialog', { name: 'Inbox' });
+  await inbox.getByRole('button', { name: /^Approval 13,/ }).click();
   await expect(page.getByRole('heading', { name: 'Approval 13' })).toBeVisible();
-  await expect(
-    page.locator('.conversation [data-focusable="agent-decision-accept"]'),
-  ).toBeFocused();
+  const accept = page.locator('.conversation [data-focusable="agent-decision-accept"]');
+  await expect(accept).toBeFocused();
 
-  // No shelf card to return to, so Back lands on the Inbox button.
+  // Over the conversation, Back closes only the inbox.
+  await page.keyboard.press('ContextMenu');
+  await expect(inbox).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(button).toBeFocused();
+  await expect(inbox).toBeHidden();
+  await expect(accept).toBeFocused();
+});
+
+test('without a pairing the inbox still opens and says where to pair', async ({ page }) => {
+  await page.goto('/');
+  await page.keyboard.press('ContextMenu');
+  const inbox = page.getByRole('dialog', { name: 'Inbox' });
+  await expect(inbox).toContainText('Bring your agents to the TV.');
+  await expect(inbox).toContainText('Open T3 Code from Luma’s Home or Apps to pair.');
+  await page.keyboard.press('Escape');
+  await expect(inbox).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Open Netflix', exact: true })).toBeFocused();
 });
 
 test('the inbox panel moves, opens and closes with the remote on its own', async ({ page }) => {
@@ -315,7 +328,8 @@ test('the inbox panel moves, opens and closes with the remote on its own', async
   await expect(inbox.getByRole('button', { name: /^finished,/ })).toBeFocused();
   await page.keyboard.press('Enter');
   await page.keyboard.press('Escape');
-  await expect(page.locator('body')).toHaveAttribute('data-log', 'open finished;close;');
+  await page.keyboard.press('ContextMenu');
+  await expect(page.locator('body')).toHaveAttribute('data-log', 'open finished;close;close;');
 });
 
 test('going back up a tall group keeps its first row in view', async ({ page }) => {

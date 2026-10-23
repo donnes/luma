@@ -12,7 +12,6 @@ interface Props {
   reordering?: boolean;
   onLaunch: (app: TVApp) => void;
   onOptions: (app: TVApp) => void;
-  onHold?: (app: TVApp) => void;
 }
 
 export const AppTile = memo(function AppTile({
@@ -23,7 +22,6 @@ export const AppTile = memo(function AppTile({
   reordering,
   onLaunch,
   onOptions,
-  onHold,
 }: Props) {
   const { t } = useTranslation();
   const hold = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -55,7 +53,7 @@ export const AppTile = memo(function AppTile({
         held.current = false;
         hold.current = setTimeout(() => {
           held.current = true;
-          (onHold ?? onOptions)(app);
+          onOptions(app);
         }, 600);
       }}
       onPointerUp={clearHold}
