@@ -38,9 +38,12 @@
         <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
       </intent-filter>
     </activity>
-    <!-- POC: T3 Code's own web client, opened from the T3 Code tile. -->
+    <!-- POC: T3 Code's own web client, opened from the T3 Code tile. This
+         activity and the inbox have labels of their own because HomeGuard
+         tells Luma's page from them by window title, which is the label. -->
     <activity
         android:name="app.luma.firetv.WebAppActivity"
+        android:label="T3 Code"
         android:exported="false"
         android:screenOrientation="landscape"
         android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode" />
@@ -48,6 +51,7 @@
          its own task, so the app it opens over stays in front underneath. -->
     <activity
         android:name="app.luma.firetv.InboxActivity"
+        android:label="Luma inbox"
         android:exported="false"
         android:taskAffinity="com.luma.launcher.inbox"
         android:launchMode="singleTask"

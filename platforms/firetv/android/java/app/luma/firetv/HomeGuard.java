@@ -11,6 +11,7 @@ import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -78,10 +79,11 @@ import org.json.JSONObject;
  * whatever app is in front, T3 Code's web app included. Luma's own page
  * handles Menu itself, so while it's in front the key goes through. The
  * service filters key events for this alone: every other key passes straight
- * on.
+ * on, and only Menu looks at the windows.
  *
  * <p>Events come only from Amazon's launcher package; window content is read
- * only to find the Luma tile there. Enable it once over ADB (see
+ * only to find the Luma tile there, and on Menu to tell whether Luma's page
+ * is the active window. Enable it once over ADB (see
  * platforms/firetv/README.md).
  */
 public final class HomeGuard extends AccessibilityService {
@@ -254,10 +256,28 @@ public final class HomeGuard extends AccessibilityService {
     }
     if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
       // While the cover hides Amazon's home on the way back, it takes the key.
-      menuOpensInbox = !lumaVisible && cover == null;
+      menuOpensInbox = cover == null && !lumaInFront();
       if (menuOpensInbox) openInbox();
     }
     return menuOpensInbox;
+  }
+
+  /**
+   * Whether Luma's page is the active window, asked of the system rather than
+   * {@link #lumaVisible}: a Luma that died in front never reported leaving.
+   * Not through {@link #getWindows}: this process caches its answer, and
+   * only events this service doesn't receive would clear it. The page's
+   * window takes its title from the app's label; Luma's other activities
+   * have labels of their own (see the manifest).
+   */
+  private boolean lumaInFront() {
+    // Window titles came with Android 7.
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return lumaVisible;
+    AccessibilityNodeInfo root = getRootInActiveWindow();
+    if (root == null || !getPackageName().contentEquals(root.getPackageName())) return false;
+    AccessibilityWindowInfo window = root.getWindow();
+    String label = String.valueOf(getApplicationInfo().loadLabel(getPackageManager()));
+    return window != null && label.contentEquals(window.getTitle());
   }
 
   /** Opens the inbox over the app in front, or closes it if it's already there. */
