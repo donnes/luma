@@ -2,6 +2,7 @@ package app.luma.firetv;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
@@ -37,10 +38,33 @@ public class WebAppActivity extends Activity {
   private WebView webView;
   private String injection;
   private String then;
+  /** Where this page is headed, the deep link or the page itself, for Luma to reopen after a repair. */
+  private String target;
   /** Opened with a pairing code: a pair page with no code is T3 Code mid hand-off, not a lost session. */
   private boolean handoff;
   /** The deep link is loading; forget the pairing pages before it. */
   private boolean forgetHistory;
+
+  /**
+   * Opens {@code url}, then {@code then} when not empty, once the page has
+   * left /pair; null, logged, for anything but http(s).
+   */
+  static Intent intent(Context context, String url, String then) {
+    boolean hasThen = then != null && !then.isEmpty();
+    if (!isWeb(url) || (hasThen && !isWeb(then))) {
+      Log.w(TAG, "Refusing to open " + url);
+      return null;
+    }
+    Intent intent = new Intent(context, WebAppActivity.class);
+    intent.putExtra(EXTRA_URL, url);
+    if (hasThen) intent.putExtra(EXTRA_THEN, then);
+    return intent;
+  }
+
+  private static boolean isWeb(String url) {
+    String scheme = url == null ? null : Uri.parse(url).getScheme();
+    return "http".equals(scheme) || "https".equals(scheme);
+  }
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -66,6 +90,7 @@ public class WebAppActivity extends Activity {
   private void load(Intent intent) {
     String url = intent.getStringExtra(EXTRA_URL);
     then = intent.getStringExtra(EXTRA_THEN);
+    target = then != null ? then : url;
     handoff = "/pair".equals(Uri.parse(url).getPath());
     webView.loadUrl(url);
   }
@@ -161,7 +186,11 @@ public class WebAppActivity extends Activity {
   }
 
   private final class Page {
-    /** The server wants a pairing code: close and let Luma's form collect one. */
+    /**
+     * The server wants a pairing code: close and let Luma's page pair again and
+     * reopen the target. That page may not be the one that opened this, as
+     * with the inbox over other apps, so the target goes along.
+     */
     @JavascriptInterface
     public void repair() {
       runOnUiThread(
@@ -169,6 +198,7 @@ public class WebAppActivity extends Activity {
             if (handoff) return;
             Intent luma = new Intent(WebAppActivity.this, MainActivity.class);
             luma.setAction(MainActivity.ACTION_REPAIR_WEB_APP);
+            luma.putExtra(EXTRA_URL, target);
             startActivity(luma);
             finish();
           });

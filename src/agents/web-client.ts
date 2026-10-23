@@ -13,7 +13,6 @@ const REPAIR_GRACE_MS = 30000;
 
 export const canOpenT3Code = canOpenWebApp;
 
-let lastPath = '';
 let pairedAt = 0;
 
 /** Opens T3 Code at a path of its web app, e.g. a thread's `<environmentId>/<threadId>`. */
@@ -21,7 +20,6 @@ export async function openT3Code(path = '') {
   const { pairing, route } = agentsConnection().getState();
   if (!pairing) return;
   const server = route ?? pairing.pairedOn;
-  lastPath = path;
   if (localStorage.getItem(STORAGE_KEY) === server.url) {
     openWebApp(server.url + path);
     return;
@@ -32,11 +30,17 @@ export async function openT3Code(path = '') {
   openWebApp(`${server.url}pair#${new URLSearchParams({ token: code })}`, server.url + path);
 }
 
-/** The web app's session is gone (or never stuck): pair it again, once. */
-export async function repairT3Code() {
+/**
+ * The web app's session is gone (or never stuck): pair it again, once, and go
+ * on to `url`, where the web app was headed. Another window may have opened
+ * it, such as the Fire TV inbox over other apps.
+ */
+export async function repairT3Code(url: string) {
   localStorage.removeItem(STORAGE_KEY);
   if (Date.now() - pairedAt < REPAIR_GRACE_MS) throw new Error('webClientRejected');
-  await openT3Code(lastPath);
+  // Only the path: the code goes to the paired server, whichever address it was.
+  const { pathname, search } = new URL(url);
+  await openT3Code(pathname.slice(1) + search);
 }
 
 export const threadPath = (environmentId: string, threadId: string) =>

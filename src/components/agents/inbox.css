@@ -1,5 +1,9 @@
 /* The agents inbox panel. Everything it needs is scoped here so it renders
    the same outside Luma's page styles; amber only ever means "needs you". */
+/* The Fire TV shell's window over other apps shows the app through the page. */
+:root.inbox-only {
+  background: transparent;
+}
 /* The panel sits on the right, above whatever page Menu opened it on. */
 .inbox-layer {
   position: fixed;

@@ -92,6 +92,7 @@ async function mockT3(
       return json(route, { access_token: 'token-1', token_type: 'Bearer', expires_in: 2592000 });
     if (url.pathname === '/api/auth/websocket-ticket')
       return json(route, { ticket: 'ticket-1', expiresAt: now });
+    if (url.pathname === '/api/auth/pairing-token') return json(route, { credential: 'WEB-CODE' });
     return route.fulfill({ status: 404 });
   });
   await page.routeWebSocket(/192\.168\.50\.5:3773\/ws/, (socket) => {
@@ -568,6 +569,7 @@ type FireTV = typeof window & {
   __listening: boolean;
   __history: string;
   __historyFails?: boolean;
+  LumaAndroid: object;
 };
 async function fireTV(page: Page, history: string[] | null = null) {
   await page.addInitScript((history) => {
@@ -788,4 +790,62 @@ test('on Fire TV, an alert passed on twice shows once, and the next one follows'
   await expect(toast.locator('strong')).toHaveText('Pick a name for the release', {
     timeout: 8000,
   });
+});
+
+test('on Fire TV, #inbox shows the inbox alone and OK opens the thread in T3 Code', async ({
+  page,
+}) => {
+  await mockT3(page);
+  await page.goto('/');
+  await pair(page);
+  await expect(
+    page.getByRole('heading', { name: 'Browser tests for the Agents tile' }),
+  ).toBeVisible();
+
+  // InboxActivity's page, which shares the pairing, gets openWebApp and nothing else.
+  await page.addInitScript(() => {
+    const opened: string[][] = [];
+    Object.assign(window, {
+      __opened: opened,
+      LumaAndroid: { openWebApp: (url: string, then: string) => opened.push([url, then]) },
+    });
+  });
+  await page.goto('/#inbox');
+  await page.reload();
+  const inbox = page.getByRole('dialog', { name: 'Inbox' });
+  const row = inbox.getByRole('button', { name: /^Browser tests for the Agents tile,/ });
+  await expect(row).toBeFocused();
+  await expect(page.locator('.shell')).toHaveCount(0);
+  expect(
+    await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor),
+  ).toBe('rgba(0, 0, 0, 0)');
+
+  await page.keyboard.press('Enter');
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __opened: string[][] }).__opened))
+    .toEqual([[`${server}/pair#token=WEB-CODE`, `${server}/env-1/${threadId}`]]);
+});
+
+test('on Fire TV, pairing T3 Code again goes on to the thread the web app was opening', async ({
+  page,
+}) => {
+  await fireTV(page);
+  // This shell also hosts T3 Code's web app.
+  await page.addInitScript(() => {
+    const w = window as FireTV & { __opened: string[][] };
+    w.__opened = [];
+    Object.assign(w.LumaAndroid, {
+      openWebApp: (url: string, then: string) => w.__opened.push([url, then]),
+    });
+  });
+  await mockT3(page);
+  await pairOnFireTV(page);
+
+  // The inbox's window opened the thread on a saved session that T3 Code has
+  // dropped, so WebAppActivity hands its target to MainActivity's page, which
+  // never opened anything itself.
+  await fromHomeGuard(page, 'luma:t3-repair', `${server}/env-1/${threadId}`);
+  await expect
+    .poll(() => page.evaluate(() => (window as FireTV & { __opened: string[][] }).__opened))
+    .toEqual([[`${server}/pair#token=WEB-CODE`, `${server}/env-1/${threadId}`]]);
 });
