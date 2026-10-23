@@ -63,8 +63,11 @@ export async function pair(address: string, code: string, deviceLabel: string): 
   let response: Response;
   try {
     // The token endpoint only accepts form-encoded bodies.
+    // Credential requests never follow redirects: only this address proved
+    // its identity, so the code or token mustn't be forwarded anywhere else.
     response = await fetch(`${route.url}oauth/token`, {
       method: 'POST',
+      redirect: 'error',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
@@ -99,6 +102,7 @@ export async function websocketTicket(route: Route, token: string): Promise<stri
   try {
     response = await fetch(`${route.url}api/auth/websocket-ticket`, {
       method: 'POST',
+      redirect: 'error',
       headers: { authorization: `Bearer ${token}` },
     });
   } catch {
@@ -117,6 +121,7 @@ export async function pairingCode(route: Route, token: string, label: string): P
   try {
     response = await fetch(`${route.url}api/auth/pairing-token`, {
       method: 'POST',
+      redirect: 'error',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ label }),
     });
