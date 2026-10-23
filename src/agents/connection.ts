@@ -84,8 +84,6 @@ export class AgentsConnection {
   private upgradeTimer: ReturnType<typeof setInterval> | undefined;
   private connectedAt = 0;
   private cooldown = new Map<string, number>();
-  /** Routes that last answered as another environment, until one answers as this one again. */
-  private mismatched = new Set<string>();
   private focusedThread: string | null = null;
   private threadStream: { cancel: () => void } | null = null;
   private watchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -120,14 +118,12 @@ export class AgentsConnection {
   async pair(address: string, code: string, deviceLabel: string) {
     const pairing = await pair(address, code, deviceLabel);
     this.disconnect();
-    this.mismatched.clear();
     this.set({ pairing, status: 'paused', shell: emptyShell(), detail: null, route: null });
     this.resume();
   }
 
   unpair() {
     this.disconnect();
-    this.mismatched.clear();
     savePairing(null);
     this.set({ pairing: null, status: 'unpaired', shell: emptyShell(), detail: null, route: null });
   }
@@ -169,29 +165,18 @@ export class AgentsConnection {
     this.set({ status: 'connecting' });
     const now = Date.now();
     const routes = pairing.routes.filter((route) => (this.cooldown.get(route.url) ?? 0) < now);
-    // true: answered as this environment; false: as another one; null: silent.
-    const matches = await Promise.all(
+    // Only routes that answer as the paired environment right now get the
+    // token. An address proves nothing by itself: LAN addresses change owners,
+    // and a Tailscale address names a device, not the server listening on it.
+    const answered = await Promise.all(
       routes.map((route) =>
         describe(route, PROBE_MS)
           .then((environment) => environment.environmentId === pairing.environmentId)
-          .catch(() => null),
+          .catch(() => false),
       ),
     );
     if (attempt !== this.attempt) return;
-    routes.forEach((route, index) => {
-      if (matches[index] === true) this.mismatched.delete(route.url);
-      else if (matches[index] === false) this.mismatched.add(route.url);
-    });
-    // Routes that answered as this environment first, in rank order; silent
-    // ones are a last resort since the check itself can be what's blocked. A
-    // route that answered as another environment never sees the token, even
-    // when a later probe goes silent.
-    const order = [
-      ...routes.filter((_, index) => matches[index] === true),
-      ...routes.filter(
-        (route, index) => matches[index] === null && !this.mismatched.has(route.url),
-      ),
-    ];
+    const order = routes.filter((_, index) => answered[index]);
     for (const route of order) {
       try {
         await this.open(route, attempt);
