@@ -10,6 +10,7 @@ import {
   pendingRequest,
   shelfAgents,
 } from '../src/agents/model.ts';
+import { takeAlerts } from '../src/agents/alerts.ts';
 import { learnRoutes, parsePairingInput, routeFor, routeKind } from '../src/agents/routes.ts';
 import type { ThreadShell } from '../src/agents/types.ts';
 
@@ -35,6 +36,16 @@ function thread(id: string, patch: Partial<ThreadShell> = {}): ThreadShell {
     ...patch,
   };
 }
+
+const ids = (agents: { thread: { id: string } }[]) => agents.map((agent) => agent.thread.id);
+const snapshot = (...threads: ThreadShell[]) =>
+  applyShellItem(emptyShell(), {
+    kind: 'snapshot',
+    snapshot: { snapshotSequence: 1, projects: [], threads },
+  });
+const request = (id: string, kind: 'command' | 'user_input' = 'command') => ({
+  pendingRuntimeRequest: { id, kind, createdAt: minutesAgo(1) },
+});
 
 test('agent status matches T3 Code: questions and approvals need you, auth refreshes do not', () => {
   const request = { id: 'r', createdAt: minutesAgo(1) };
@@ -176,11 +187,67 @@ test('the inbox groups needs-you, done and working threads, each in its own orde
       ],
     },
   });
-  const ids = (agents: { thread: { id: string } }[]) => agents.map((agent) => agent.thread.id);
   const inbox = inboxGroups(shell, now);
   assert.deepEqual(ids(inbox.needsYou), ['older-request', 'newer-request']);
   assert.deepEqual(ids(inbox.done), ['finished', 'settled', 'failed']);
   assert.deepEqual(ids(inbox.working), ['newer-run', 'older-run']);
+});
+
+test('alerts fire once per new request, not for what was waiting at first sight or after a reconnect', () => {
+  // Luma's first snapshot ever only records what's already waiting.
+  let taken = takeAlerts(snapshot(thread('a', request('r1'))), null);
+  assert.deepEqual(ids(taken.alerts), []);
+  let seen = taken.seen;
+
+  taken = takeAlerts(
+    snapshot(thread('a', request('r1')), thread('b', request('r2', 'user_input'))),
+    seen,
+  );
+  assert.deepEqual(ids(taken.alerts), ['b']);
+  seen = taken.seen;
+
+  // A reconnect or restart brings the same requests in a fresh snapshot.
+  taken = takeAlerts(snapshot(thread('a', request('r1')), thread('b', request('r2'))), seen);
+  assert.deepEqual(ids(taken.alerts), []);
+  assert.equal(taken.seen, seen);
+
+  // Its question turning non-blocking and back doesn't count as new.
+  const nonBlocking = thread('b', {
+    status: 'running',
+    pendingRuntimeRequest: {
+      id: 'r2',
+      kind: 'user_input',
+      createdAt: minutesAgo(1),
+      blocking: false,
+    },
+  });
+  taken = takeAlerts(snapshot(nonBlocking), seen);
+  assert.deepEqual(ids(taken.alerts), []);
+  assert.deepEqual(ids(takeAlerts(snapshot(thread('b', request('r2'))), taken.seen).alerts), []);
+
+  // The next request from the same agent does.
+  assert.deepEqual(ids(takeAlerts(snapshot(thread('a', request('r3'))), seen).alerts), ['a']);
+});
+
+test('alert history keeps a request while it is pending, however many come after it', () => {
+  let seen = takeAlerts(snapshot(), null).seen;
+  let taken = takeAlerts(snapshot(thread('a', request('r0'))), seen);
+  assert.deepEqual(ids(taken.alerts), ['a']);
+  seen = taken.seen;
+
+  // Another agent asks and gets answered, again and again, while a waits.
+  for (let next = 1; next <= 250; next++) {
+    taken = takeAlerts(
+      snapshot(thread('a', request('r0')), thread('b', request(`r${next}`))),
+      seen,
+    );
+    assert.deepEqual(ids(taken.alerts), ['b']);
+    seen = taken.seen;
+  }
+  assert.deepEqual(seen, ['r0', 'r250']);
+
+  // A request that ended is forgotten.
+  assert.deepEqual(takeAlerts(snapshot(thread('b', request('r250'))), seen).seen, ['r250']);
 });
 
 test('a pending approval pairs with its turn item and keeps the server’s decisions', () => {

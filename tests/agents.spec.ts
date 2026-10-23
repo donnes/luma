@@ -66,6 +66,8 @@ async function mockT3(
   const commands: Record<string, unknown>[] = [];
   let up = true;
   const sockets: WebSocketRoute[] = [];
+  // Sends later shell stream items, as the server does when threads change.
+  let pushShell: (...items: object[]) => void = () => {};
   const json = (route: Route, body: unknown) =>
     route.fulfill({
       status: 200,
@@ -99,11 +101,12 @@ async function mockT3(
       const message = JSON.parse(String(raw));
       if (message._tag !== 'Request') return;
       const { id, tag, payload } = message;
-      if (tag === 'orchestration.subscribeShell')
+      if (tag === 'orchestration.subscribeShell') {
         void (shellSent ?? Promise.resolve()).then(() =>
           reply({ _tag: 'Chunk', requestId: id, values: [shell] }),
         );
-      else if (tag === 'orchestration.subscribeThread')
+        pushShell = (...items) => reply({ _tag: 'Chunk', requestId: id, values: items });
+      } else if (tag === 'orchestration.subscribeThread')
         void (threadSent ?? Promise.resolve()).then(() =>
           reply({ _tag: 'Chunk', requestId: id, values: [threadSnapshot] }),
         );
@@ -119,7 +122,7 @@ async function mockT3(
     up = false;
     for (const socket of sockets) await socket.close();
   };
-  return { commands, down };
+  return { commands, down, pushShell: (...items: object[]) => pushShell(...items) };
 }
 
 test('the T3 Code app opens to pairing, then OK approves the waiting agent', async ({ page }) => {
@@ -476,4 +479,313 @@ test('the list scrolls a tall group with the remote and back to its first row', 
   for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowUp');
   await expect(first).toBeFocused();
   await expect(first).toBeInViewport({ ratio: 1 });
+});
+
+test('an agent that newly needs you shows a toast, except where the agents page shows it', async ({
+  page,
+}) => {
+  const { pushShell } = await mockT3(page);
+  await page.goto('/');
+  // Pairing lands on the agents page with the waiting agent in the spotlight;
+  // what was already waiting doesn't alert.
+  await pair(page);
+  await expect(
+    page.getByRole('heading', { name: 'Browser tests for the Agents tile' }),
+  ).toBeVisible();
+  const toast = page.locator('.agent-toast');
+  const waiting = (sequence: number, id: string, title: string, request: string) => ({
+    kind: 'thread.updated',
+    sequence,
+    location: 'active',
+    thread: inboxThread(id, 'p1', title, {
+      status: 'running',
+      activityRunStatus: 'waiting',
+      pendingRuntimeRequest: { id: request, kind: 'user_input', createdAt: minutesAgo(0) },
+    }),
+  });
+
+  // Several agents asking in one update show one after another, except the
+  // agent on screen, which would come between them if it alerted.
+  pushShell(
+    waiting(6, 'thread-2', 'Second opinion on the overlay', 'r6'),
+    waiting(7, threadId, 'Browser tests for the Agents tile', 'r5'),
+    waiting(8, 'thread-3', 'Pick a name for the release', 'r7'),
+  );
+  await expect(toast).toHaveCount(1);
+  await expect(toast.locator('strong')).toHaveText('Second opinion on the overlay');
+  await expect(toast.locator('strong')).toHaveText('Pick a name for the release', {
+    timeout: 8000,
+  });
+  await expect(toast.locator('.agent-toast-headline')).toHaveText(
+    'Needs you · asked a questionworkstation',
+  );
+  await expect(toast.locator('small')).toHaveText('luma');
+  // Fully shown once it has slid in, then gone after a few seconds.
+  await expect(toast).toHaveCSS('opacity', '1');
+  await expect(toast).toBeHidden({ timeout: 8000 });
+});
+
+const asking = (sequence: number, id: string, title: string, request: string | null) => ({
+  kind: 'thread.updated',
+  sequence,
+  location: 'active',
+  thread: inboxThread(id, 'p1', title, {
+    status: 'running',
+    activityRunStatus: request ? 'waiting' : 'running',
+    pendingRuntimeRequest: request && {
+      id: request,
+      kind: 'user_input',
+      createdAt: minutesAgo(0),
+    },
+  }),
+});
+
+test('a queued alert whose request was answered meanwhile never shows', async ({ page }) => {
+  const { pushShell } = await mockT3(page);
+  await page.goto('/');
+  await pair(page);
+  await expect(
+    page.getByRole('heading', { name: 'Browser tests for the Agents tile' }),
+  ).toBeVisible();
+  const toast = page.locator('.agent-toast');
+  pushShell(
+    asking(6, 'thread-2', 'Second opinion on the overlay', 'r6'),
+    asking(7, 'thread-3', 'Pick a name for the release', 'r7'),
+  );
+  await expect(toast.locator('strong')).toHaveText('Second opinion on the overlay');
+  // Answered elsewhere while the first alert is on screen.
+  pushShell(asking(8, 'thread-3', 'Pick a name for the release', null));
+  await expect(toast.filter({ hasText: 'Second opinion on the overlay' })).toHaveCount(0, {
+    timeout: 8000,
+  });
+  expect(await toast.count()).toBe(0);
+});
+
+// The Fire TV shell with HomeGuard on. HomeGuard finds the alerts and keeps
+// the history of alerted requests, which it shares with the page.
+type FireTV = typeof window & {
+  __homeGuard: boolean;
+  __listening: boolean;
+  __history: string;
+  __historyFails?: boolean;
+};
+async function fireTV(page: Page, history: string[] | null = null) {
+  await page.addInitScript((history) => {
+    const w = window as FireTV;
+    w.__homeGuard = true;
+    w.__listening = false;
+    w.__history = JSON.stringify(history);
+    Object.assign(w, {
+      LumaAndroid: {
+        isTV: () => true,
+        listApps: () => '{"apps":[]}',
+        launchApp: () => '{}',
+        exit: () => {},
+        canAlertOverApps: () => w.__homeGuard,
+        watchAgents: () => {},
+        listenForAgentAlerts: () => (w.__listening = true),
+        agentAlertHistory: () => {
+          if (w.__historyFails) throw new Error('Reading the agent alert history failed');
+          return w.__history;
+        },
+        saveAgentAlertHistory: (json: string) => (w.__history = json),
+      },
+    });
+  }, history);
+}
+
+async function pairOnFireTV(page: Page) {
+  await page.goto('/');
+  await pair(page);
+  await expect(
+    page.getByRole('heading', { name: 'Browser tests for the Agents tile' }),
+  ).toBeVisible();
+  // The shell holds its alerts back until the page listens.
+  await expect.poll(() => page.evaluate(() => (window as FireTV).__listening)).toBe(true);
+}
+
+/** What MainActivity runs for HomeGuard's events while Luma is in front. */
+const fromHomeGuard = (page: Page, event: string, detail: unknown) =>
+  page.evaluate(([event, detail]) => window.dispatchEvent(new CustomEvent(event, { detail })), [
+    event,
+    detail,
+  ] as const);
+const homeGuardAlert = (requestId: string, threadId: string, title: string) => ({
+  requestId,
+  threadId,
+  headline: 'Needs you · asked a question',
+  title,
+  detail: 'luma',
+  source: 'workstation',
+});
+
+test('on Fire TV, the page alerts itself once HomeGuard is turned off', async ({ page }) => {
+  await fireTV(page, ['r1']);
+  const { pushShell } = await mockT3(page);
+  await pairOnFireTV(page);
+  const toast = page.locator('.agent-toast');
+
+  // HomeGuard finds this one and records it; the page leaves it to the shell.
+  pushShell(asking(6, 'thread-2', 'Second opinion on the overlay', 'r6'));
+  await expect(page.locator('[data-focusable="agent-thread-2"]')).toBeVisible();
+  await page.evaluate(() => Object.assign(window, { __history: '["r1","r6"]' }));
+
+  // Turned off while Luma's page lives on, so the page alerts again.
+  await page.evaluate(() => Object.assign(window, { __homeGuard: false }));
+  pushShell(asking(7, 'thread-3', 'Pick a name for the release', 'r7'));
+  // It's the first toast: the one HomeGuard took would have come before it.
+  await expect(toast.locator('strong')).toHaveText('Pick a name for the release');
+  // And the history it leaves HomeGuard for when it comes back has it.
+  expect(JSON.parse(await page.evaluate(() => (window as FireTV).__history))).toEqual([
+    'r1',
+    'r6',
+    'r7',
+  ]);
+});
+
+test('on Fire TV, the page reads what HomeGuard recorded while briefly on', async ({ page }) => {
+  await fireTV(page, ['r1']);
+  const { pushShell } = await mockT3(page);
+  await pairOnFireTV(page);
+  const toast = page.locator('.agent-toast strong');
+
+  // With HomeGuard off, the page alerts and keeps the history.
+  await page.evaluate(() => Object.assign(window, { __homeGuard: false }));
+  pushShell(asking(6, 'thread-2', 'Second opinion on the overlay', 'r5'));
+  await expect(toast).toHaveText('Second opinion on the overlay');
+
+  // HomeGuard comes on, alerts r6 itself and goes off again, all before the
+  // page hears of r6. The page must not alert it a second time.
+  await page.evaluate(() =>
+    Object.assign(window, { __homeGuard: true, __history: '["r1","r5","r6"]' }),
+  );
+  await page.evaluate(() => Object.assign(window, { __homeGuard: false }));
+  pushShell(
+    asking(7, 'thread-3', 'Pick a name for the release', 'r6'),
+    asking(8, 'thread-4', 'Review the overlay copy', 'r7'),
+  );
+  await expect(toast).toHaveText('Review the overlay copy', { timeout: 10000 });
+});
+
+test('on Fire TV, an alert waits out a history the shell cannot read', async ({ page }) => {
+  await fireTV(page, ['r1']);
+  const { pushShell } = await mockT3(page);
+  await pairOnFireTV(page);
+  await page.evaluate(() => Object.assign(window, { __homeGuard: false, __historyFails: true }));
+
+  // Without its history the page can't tell what's new, so it holds off.
+  pushShell(asking(6, 'thread-2', 'Second opinion on the overlay', 'r6'));
+  await expect(page.locator('[data-focusable="agent-thread-2"]')).toBeVisible();
+  await expect(page.locator('.agent-toast')).toHaveCount(0);
+
+  // Readable again: the next update alerts what it held off on.
+  await page.evaluate(() => Object.assign(window, { __historyFails: false }));
+  pushShell(asking(7, 'thread-3', 'Pick a name for the release', null));
+  await expect(page.locator('.agent-toast strong')).toHaveText('Second opinion on the overlay');
+});
+
+test('on Fire TV, a queued alert leaves once answered even while the history is unreadable', async ({
+  page,
+}) => {
+  await fireTV(page, ['r1']);
+  const { pushShell } = await mockT3(page);
+  await pairOnFireTV(page);
+  await page.evaluate(() => Object.assign(window, { __homeGuard: false }));
+  const toast = page.locator('.agent-toast');
+  pushShell(
+    asking(6, 'thread-2', 'Second opinion on the overlay', 'r6'),
+    asking(7, 'thread-3', 'Pick a name for the release', 'r7'),
+  );
+  await expect(toast.locator('strong')).toHaveText('Second opinion on the overlay');
+
+  // The second is answered while the history can't be read.
+  await page.evaluate(() => Object.assign(window, { __historyFails: true }));
+  pushShell(asking(8, 'thread-3', 'Pick a name for the release', null));
+  await expect(toast).toBeHidden({ timeout: 8000 });
+  await page.waitForTimeout(1000);
+  await expect(toast).toHaveCount(0);
+});
+
+test('on Fire TV, alerts HomeGuard passed on ahead of the page still show', async ({ page }) => {
+  await fireTV(page, ['r1']);
+  const { pushShell } = await mockT3(page);
+  await pairOnFireTV(page);
+  const toast = page.locator('.agent-toast strong');
+
+  // HomeGuard alerts two requests the page's stream hasn't brought yet.
+  await page.evaluate(() => Object.assign(window, { __history: '["r1","r6","r7"]' }));
+  await fromHomeGuard(
+    page,
+    'luma:agent-alert',
+    homeGuardAlert('r6', 'thread-2', 'Second opinion on the overlay'),
+  );
+  await fromHomeGuard(
+    page,
+    'luma:agent-alert',
+    homeGuardAlert('r7', 'thread-3', 'Pick a name for the release'),
+  );
+  await expect(toast).toHaveText('Second opinion on the overlay');
+
+  // HomeGuard goes off, and an unrelated update arrives while the history
+  // can't be read; then the stream catches up.
+  await page.evaluate(() => Object.assign(window, { __homeGuard: false, __historyFails: true }));
+  pushShell(asking(6, 'thread-4', 'Review the overlay copy', null));
+  await expect(page.getByText('Review the overlay copy')).toBeVisible();
+  await page.evaluate(() => Object.assign(window, { __historyFails: false }));
+  pushShell(
+    asking(7, 'thread-2', 'Second opinion on the overlay', 'r6'),
+    asking(8, 'thread-3', 'Pick a name for the release', 'r7'),
+  );
+  // Both still show, in order.
+  await expect(page.getByText('Pick a name for the release').first()).toBeVisible();
+  await expect(toast).toHaveText('Second opinion on the overlay');
+  await expect(toast).toHaveText('Pick a name for the release', { timeout: 10000 });
+});
+
+test('on Fire TV, a queued alert leaves once HomeGuard sees its request end', async ({ page }) => {
+  await fireTV(page, ['r1']);
+  await mockT3(page);
+  await pairOnFireTV(page);
+  const toast = page.locator('.agent-toast');
+
+  // HomeGuard found both, and the page's own connection never saw r7 pending.
+  await fromHomeGuard(
+    page,
+    'luma:agent-alert',
+    homeGuardAlert('r6', 'thread-2', 'Second opinion on the overlay'),
+  );
+  await fromHomeGuard(
+    page,
+    'luma:agent-alert',
+    homeGuardAlert('r7', 'thread-3', 'Pick a name for the release'),
+  );
+  await expect(toast.locator('strong')).toHaveText('Second opinion on the overlay');
+  // Answered elsewhere while the first alert is on screen.
+  await fromHomeGuard(page, 'luma:agent-alerts-ended', ['r7']);
+  await expect(toast.filter({ hasText: 'Second opinion on the overlay' })).toHaveCount(0, {
+    timeout: 8000,
+  });
+  expect(await toast.count()).toBe(0);
+});
+
+test('on Fire TV, an alert passed on twice shows once, and the next one follows', async ({
+  page,
+}) => {
+  await fireTV(page, ['r1']);
+  await mockT3(page);
+  await pairOnFireTV(page);
+  const toast = page.locator('.agent-toast');
+
+  const first = homeGuardAlert('r6', 'thread-2', 'Second opinion on the overlay');
+  await fromHomeGuard(page, 'luma:agent-alert', first);
+  await fromHomeGuard(page, 'luma:agent-alert', first);
+  await fromHomeGuard(
+    page,
+    'luma:agent-alert',
+    homeGuardAlert('r7', 'thread-3', 'Pick a name for the release'),
+  );
+  await expect(toast.locator('strong')).toHaveText('Second opinion on the overlay');
+  await expect(toast.locator('strong')).toHaveText('Pick a name for the release', {
+    timeout: 8000,
+  });
 });

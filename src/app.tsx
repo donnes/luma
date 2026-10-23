@@ -34,7 +34,8 @@ import { AgentsSummary } from './components/agents/agents-summary';
 import { ConnectionButton } from './components/agents/connection-button';
 import { AgentsInbox } from './components/agents/inbox';
 import { OpenT3Button } from './components/agents/open-t3-button';
-import { AGENTS_APP_ID, useAgentsLifecycle } from './agents/use-agents';
+import { AgentToast } from './components/agents/agent-toast';
+import { AGENTS_APP_ID, useAgentAlerts, useAgentsLifecycle } from './agents/use-agents';
 import { repairT3Code } from './agents/web-client';
 
 const categories: Category[] = ['Streaming', 'Music', 'Gaming', 'Utilities'];
@@ -96,6 +97,7 @@ function Launcher({
   const [inbox, setInbox] = useState(false);
   const agentsBack = useRef<(() => boolean) | null>(null);
   useAgentsLifecycle();
+  const { toast: agentToast, done: nextAgentAlert } = useAgentAlerts();
   // Luma's own T3 Code app sits in the library like an installed one; it
   // opens to pairing until it's connected.
   const apps = useMemo(
@@ -940,6 +942,9 @@ function Launcher({
             <X size={18} />
           </button>
         </div>
+      ) : null}
+      {agentToast ? (
+        <AgentToast key={agentToast.key} alert={agentToast.alert} onDone={nextAgentAlert} />
       ) : null}
       {launching ? (
         <div className="launch-status" role="status">

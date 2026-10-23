@@ -2,7 +2,10 @@ package app.luma.firetv;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
@@ -22,8 +25,11 @@ import android.widget.FrameLayout;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
+import org.json.JSONArray;
 
 /**
  * Android TV / Fire TV shell: hosts the bundled Luma app ({@code dist/app} lives
@@ -56,6 +62,32 @@ public class MainActivity extends Activity {
   private WebView webView;
   private final Shell shell = new Shell(this);
   private final Runnable reportShown = () -> HomeGuard.report(this, true);
+  /**
+   * HomeGuard asking whether Luma is in front, and its agent alerts while Luma
+   * is, for the page's own toast, then the requests that ended. HomeGuard
+   * counts an alert as shown once it's sent, so the events that come while
+   * the page is still starting, as after the system killed Luma, wait here in
+   * order until the page listens for them.
+   */
+  private final BroadcastReceiver fromHomeGuard =
+      new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+          String action = intent.getAction();
+          if (HomeGuard.ACTION_REPORT_LUMA.equals(action)) {
+            HomeGuard.report(MainActivity.this, resumed);
+          } else if (HomeGuard.ACTION_AGENT_ALERT.equals(action)) {
+            String alert = intent.getStringExtra(HomeGuard.EXTRA_ALERT);
+            if (alert != null) toPage("luma:agent-alert", alert);
+          } else if (HomeGuard.ACTION_AGENTS_ENDED.equals(action)) {
+            List<String> ended = intent.getStringArrayListExtra(HomeGuard.EXTRA_REQUESTS);
+            if (ended != null) toPage("luma:agent-alerts-ended", new JSONArray(ended).toString());
+          }
+        }
+      };
+  private final ArrayList<String> heldEvents = new ArrayList<>();
+  private boolean pageListening;
+  private boolean resumed;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -72,6 +104,25 @@ public class MainActivity extends Activity {
     setContentView(layout);
 
     webView.loadUrl(BASE_URL + "index.html");
+    IntentFilter events = new IntentFilter(HomeGuard.ACTION_REPORT_LUMA);
+    events.addAction(HomeGuard.ACTION_AGENT_ALERT);
+    events.addAction(HomeGuard.ACTION_AGENTS_ENDED);
+    registerReceiver(fromHomeGuard, events, HomeGuard.PERMISSION, null);
+  }
+
+  /** From the page, through {@link Shell#listenForAgentAlerts}. */
+  void onPageListening() {
+    pageListening = true;
+    for (String event : heldEvents) webView.evaluateJavascript(event, null);
+    heldEvents.clear();
+  }
+
+  /** Dispatches an event with JSON {@code detail}, the bridge's AGENT_ALERT_EVENT and the like. */
+  private void toPage(String name, String detail) {
+    String event =
+        "window.dispatchEvent(new CustomEvent('" + name + "',{detail:" + detail + "}))";
+    if (pageListening) webView.evaluateJavascript(event, null);
+    else heldEvents.add(event);
   }
 
   @Override
@@ -84,6 +135,7 @@ public class MainActivity extends Activity {
 
   @Override
   protected void onPause() {
+    resumed = false;
     webView.removeCallbacks(reportShown);
     HomeGuard.report(this, false);
     webView.onPause();
@@ -93,6 +145,7 @@ public class MainActivity extends Activity {
   @Override
   protected void onResume() {
     super.onResume();
+    resumed = true;
     webView.onResume();
     enterImmersive(this);
     // HomeGuard may be covering Amazon's home; let it drop the cover once the
@@ -102,6 +155,7 @@ public class MainActivity extends Activity {
 
   @Override
   protected void onDestroy() {
+    unregisterReceiver(fromHomeGuard);
     if (webView != null) {
       webView.destroy();
     }
