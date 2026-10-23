@@ -89,12 +89,17 @@ export async function pair(address: string, code: string, deviceLabel: string): 
 }
 
 /** Mints the short-lived ticket a browser WebSocket needs, since it can't send headers. */
-export async function websocketTicket(route: Route, token: string): Promise<string> {
+export async function websocketTicket(
+  route: Route,
+  token: string,
+  signal?: AbortSignal,
+): Promise<string> {
   let response: Response;
   try {
     response = await fetch(`${route.url}api/auth/websocket-ticket`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}` },
+      signal,
     });
   } catch {
     throw new PairingError('unreachable');

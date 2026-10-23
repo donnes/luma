@@ -32,34 +32,47 @@ function send(response: ServerResponse, status: number, text: string) {
   response.end(text);
 }
 
-export function createVoiceServer(options: {
+interface Options {
   token: string;
   handle: (text: string) => Promise<string>;
-}) {
+}
+
+async function respond(options: Options, request: IncomingMessage, response: ServerResponse) {
+  if (request.method !== 'POST' || request.url !== '/voice') {
+    send(response, 404, 'Not found.');
+    return;
+  }
+  if (!authorized(request, options.token)) {
+    send(response, 401, "The Shortcut's token is wrong. Check its Authorization header.");
+    return;
+  }
+  const body = await readBody(request);
+  let text = '';
+  try {
+    const parsed = body === null ? null : JSON.parse(body);
+    if (typeof parsed?.text === 'string') text = parsed.text.trim();
+  } catch {
+    /* Falls through to the reply below. */
+  }
+  if (!text) {
+    send(response, 400, "I didn't hear anything.");
+    return;
+  }
+  const started = Date.now();
+  const reply = await options.handle(text);
+  console.log(`voice: answered in ${Date.now() - started} ms`);
+  send(response, 200, reply);
+}
+
+export function createVoiceServer(options: Options) {
   return createServer(async (request, response) => {
-    if (request.method !== 'POST' || request.url !== '/voice') {
-      send(response, 404, 'Not found.');
-      return;
-    }
-    if (!authorized(request, options.token)) {
-      send(response, 401, "The Shortcut's token is wrong. Check its Authorization header.");
-      return;
-    }
-    const body = await readBody(request);
-    let text = '';
     try {
-      const parsed = body === null ? null : JSON.parse(body);
-      if (typeof parsed?.text === 'string') text = parsed.text.trim();
-    } catch {
-      /* Falls through to the reply below. */
+      await respond(options, request, response);
+    } catch (error) {
+      // Usually the iPhone hanging up mid-request; it shouldn't take the service down.
+      console.error('voice: request failed:', error);
+      if (!response.headersSent && !response.destroyed)
+        send(response, 500, 'Something went wrong. Check the voice service log on the PC.');
     }
-    if (!text) {
-      send(response, 400, "I didn't hear anything.");
-      return;
-    }
-    const started = Date.now();
-    const reply = await options.handle(text);
-    console.log(`voice: answered in ${Date.now() - started} ms`);
-    send(response, 200, reply);
   });
 }

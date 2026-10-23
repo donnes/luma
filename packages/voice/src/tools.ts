@@ -1,4 +1,9 @@
-import { answerCommand, decideCommand, messageCommand } from '../../../src/agents/commands.ts';
+import {
+  answerCommand,
+  decideCommand,
+  messageCommand,
+  type Command,
+} from '../../../src/agents/commands.ts';
 import {
   agentStatus,
   answerValue,
@@ -16,6 +21,11 @@ import type { T3Session } from './t3.ts';
 // The only things the assistant can do. Each tool returns JSON for the model
 // to phrase; `{error}` results are for it to recover from, like asking which
 // thread Donald meant.
+//
+// Thread titles, messages and requests come from coding agents and can carry
+// instructions meant for the model. So once the model has seen any of them,
+// writes wait for Donald's spoken yes, and approvals always do. The model
+// never decides that he said yes: the assistant checks his next words itself.
 
 const nullable = (type: string, description: string) => ({ type: [type, 'null'], description });
 
@@ -49,8 +59,7 @@ export const toolDefinitions = [
   {
     type: 'function',
     name: 'answer_request',
-    description:
-      'Answers the pending approval or question in a thread. Approving needs Donald to confirm on his next turn: the result says so, and confirm_action carries it out.',
+    description: 'Answers the pending approval or question in a thread.',
     parameters: {
       type: 'object',
       properties: {
@@ -64,9 +73,9 @@ export const toolDefinitions = [
         },
         answers: {
           type: ['array', 'null'],
-          items: { type: 'string' },
+          items: { type: 'array', items: { type: 'string' } },
           description:
-            'For questions: one answer per question, in order, using an option label where one fits. Null for approvals.',
+            'For questions: one entry per question, in order. Each entry lists his choices, using option labels where they fit; several only for multiSelect questions. Null for approvals.',
         },
       },
       required: ['thread', 'decision', 'answers'],
@@ -74,29 +83,22 @@ export const toolDefinitions = [
     },
     strict: true,
   },
-  {
-    type: 'function',
-    name: 'confirm_action',
-    description:
-      'Carries out the approval Donald was asked to confirm on his previous turn. Only call it when he clearly says yes.',
-    parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
-    strict: true,
-  },
 ];
 
-/** An approval waiting for Donald's yes. */
+/** A command waiting for Donald's yes. Confirming runs exactly this command. */
 export interface PendingAction {
-  threadId: string;
-  requestId: string;
-  decision: ApprovalDecision;
-  title: string;
+  command: Command;
+  /** Spoken to ask for the yes. It says what `command` does. */
+  question: string;
+  /** Spoken once the command went through. */
+  done: string;
 }
 
 export interface ToolContext {
   t3: T3Session;
-  /** Set by the previous request, if it asked for confirmation. */
-  confirmable: PendingAction | null;
-  /** What this request asks Donald to confirm next. */
+  /** Whether the model has seen T3 Code text in this conversation, earlier turns included. */
+  sawThreads: boolean;
+  /** What this request asks Donald to confirm on his next press. */
   proposed: PendingAction | null;
 }
 
@@ -172,6 +174,7 @@ async function status(context: ToolContext): Promise<Result> {
               ? request.questions.map((question) => ({
                   question: question.question,
                   options: question.options.map((option) => option.label),
+                  multiSelect: question.multiSelect === true,
                 }))
               : null,
       };
@@ -193,20 +196,54 @@ async function status(context: ToolContext): Promise<Result> {
   };
 }
 
+/**
+ * Runs a write now, or holds it for Donald's yes when it needs one or the
+ * model has read thread content. One action waits at a time, so the yes
+ * always answers the question he heard.
+ */
+async function act(
+  context: ToolContext,
+  action: PendingAction & { alwaysConfirm: boolean; result: Result },
+): Promise<Result> {
+  const { alwaysConfirm, result, ...pending } = action;
+  if (!alwaysConfirm && !context.sawThreads) {
+    await context.t3.dispatch(pending.command);
+    return result;
+  }
+  if (context.proposed)
+    return { error: 'Another action is already waiting for Donald to confirm. Stop here.' };
+  context.proposed = pending;
+  return { needsConfirmation: true };
+}
+
 async function reply(context: ToolContext, args: { thread: string; message: string }) {
   const message = args.message.trim();
   if (!message) return { error: 'The message is empty.' };
   const found = findThread(await context.t3.shell(), args.thread);
   if ('error' in found) return found;
-  await context.t3.dispatch(messageCommand(found.thread.id, message));
-  return { sent: true, thread: found.thread.title };
+  const { thread } = found;
+  return act(context, {
+    command: messageCommand(thread.id, message),
+    question: `Send "${message}" to ${thread.title}? Say yes to confirm.`,
+    done: `Sent to ${thread.title}.`,
+    alwaysConfirm: false,
+    result: { sent: true, thread: thread.title },
+  });
 }
 
 const loose = (text: string) => words(text).join(' ');
 
+const verbs: Record<ApprovalDecision, [ask: string, done: string]> = {
+  accept: ['Approve', 'Approved'],
+  acceptForSession: ['Allow for this session', 'Allowed for this session'],
+  acceptAlways: ['Always allow', 'Always allowed'],
+  decline: ['Deny', 'Denied'],
+  cancel: ['Cancel', 'Cancelled'],
+};
+
 async function answer(
   context: ToolContext,
-  args: { thread: string; decision: string | null; answers: string[] | null },
+  args: { thread: string; decision: string | null; answers: string[][] | null },
 ): Promise<Result> {
   const shell = await context.t3.shell();
   const found = findThread(shell, args.thread, (thread) => needsYou(agentStatus(thread)));
@@ -222,61 +259,56 @@ async function answer(
         error: 'Pick one of these decisions.',
         decisions: request.options.map((candidate) => candidate.decision),
       };
-    if (option.decision === 'decline' || option.decision === 'cancel') {
-      await context.t3.dispatch(decideCommand(thread.id, request.requestId, option.decision));
-      return { done: true, thread: thread.title, decision: option.decision };
-    }
-    context.proposed = {
-      threadId: thread.id,
-      requestId: request.requestId,
-      decision: option.decision,
-      title: thread.title,
-    };
-    return {
-      needsConfirmation: true,
-      thread: thread.title,
-      decision: option.decision,
-      request: { kind: request.requestKind, detail: summary(request.detail, 200) },
-    };
+    const [ask, done] = verbs[option.decision];
+    const what = summary(request.detail, 120) || `the ${request.requestKind} request`;
+    return act(context, {
+      command: decideCommand(thread.id, request.requestId, option.decision),
+      question: `${ask} ${what} in ${thread.title}? Say yes to confirm.`,
+      done: `${done} ${what} in ${thread.title}.`,
+      alwaysConfirm: option.decision !== 'decline',
+      result: { done: true, thread: thread.title, decision: option.decision },
+    });
   }
 
   const given = args.answers ?? [];
   if (given.length !== request.questions.length)
     return {
-      error: `Give one answer per question, ${request.questions.length} in all.`,
+      error: `Give one entry per question, ${request.questions.length} in all.`,
       questions: request.questions.map((question) => ({
         question: question.question,
         options: question.options.map((option) => option.label),
+        multiSelect: question.multiSelect === true,
       })),
     };
   const answers: Record<string, string | string[]> = {};
+  const chosen: string[] = [];
   for (const [index, question] of request.questions.entries()) {
-    const said = loose(given[index]);
-    const option = question.options.find(
-      (candidate) => loose(candidate.label) === said || loose(answerValue(candidate)) === said,
-    );
-    if (!option && question.allowCustomAnswer === false)
-      return {
-        error: `"${given[index]}" isn't an option for "${question.question}".`,
-        options: question.options.map((candidate) => candidate.label),
-      };
-    const value = option ? answerValue(option) : given[index].trim();
-    answers[question.id] = question.multiSelect ? [value] : value;
+    const picks = given[index].map((pick) => pick.trim()).filter(Boolean);
+    if (!picks.length || (picks.length > 1 && !question.multiSelect))
+      return { error: `"${question.question}" takes exactly one answer.` };
+    const values: string[] = [];
+    for (const pick of picks) {
+      const said = loose(pick);
+      const option = question.options.find(
+        (candidate) => loose(candidate.label) === said || loose(answerValue(candidate)) === said,
+      );
+      if (!option && question.allowCustomAnswer === false)
+        return {
+          error: `"${pick}" isn't an option for "${question.question}".`,
+          options: question.options.map((candidate) => candidate.label),
+        };
+      values.push(option ? answerValue(option) : pick);
+      chosen.push(option?.label ?? pick);
+    }
+    answers[question.id] = question.multiSelect ? values : values[0];
   }
-  await context.t3.dispatch(answerCommand(thread.id, request.requestId, answers));
-  return { done: true, thread: thread.title };
-}
-
-async function confirm(context: ToolContext): Promise<Result> {
-  const action = context.confirmable;
-  if (!action)
-    return {
-      error:
-        'Nothing is waiting for confirmation. Approvals are confirmed on the turn after Luma asks.',
-    };
-  context.confirmable = null;
-  await context.t3.dispatch(decideCommand(action.threadId, action.requestId, action.decision));
-  return { done: true, thread: action.title, decision: action.decision };
+  return act(context, {
+    command: answerCommand(thread.id, request.requestId, answers),
+    question: `Answer ${thread.title} with ${chosen.join(', ')}? Say yes to confirm.`,
+    done: `Answered ${thread.title}.`,
+    alwaysConfirm: false,
+    result: { done: true, thread: thread.title },
+  });
 }
 
 function call(context: ToolContext, name: string, args: Record<string, unknown>) {
@@ -293,10 +325,12 @@ function call(context: ToolContext, name: string, args: Record<string, unknown>)
       return answer(context, {
         thread: text('thread'),
         decision: text('decision') || null,
-        answers: Array.isArray(args.answers) ? args.answers.map(String) : null,
+        answers: Array.isArray(args.answers)
+          ? args.answers.map((entry) =>
+              Array.isArray(entry) ? entry.map(String) : [String(entry)],
+            )
+          : null,
       });
-    case 'confirm_action':
-      return confirm(context);
     default:
       return Promise.resolve({ error: `There is no tool called ${name}.` });
   }
@@ -322,5 +356,8 @@ export async function runTool(
   } catch (error) {
     if (error instanceof RpcError) return { error: `T3 Code refused: ${error.message}` };
     throw error;
+  } finally {
+    // Every tool result can carry thread titles or messages.
+    context.sawThreads = true;
   }
 }

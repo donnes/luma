@@ -13,14 +13,17 @@ import {
   websocketTicket,
   type Pairing,
 } from '../../../src/agents/pairing.ts';
-import { RpcSocket } from '../../../src/agents/rpc.ts';
+import { RpcError, RpcSocket } from '../../../src/agents/rpc.ts';
 import type { ShellStreamItem, ThreadStreamItem } from '../../../src/agents/types.ts';
 
 // One short-lived connection per voice request: ask, act, hang up. The
 // service runs next to T3 Code, so there's no route juggling like on the TV.
 
+// Every step has a deadline, so a T3 Code that accepts connections but never
+// answers can't keep the Shortcut waiting.
 const CONNECT_MS = 5000;
 const SNAPSHOT_MS = 8000;
+const DISPATCH_MS = 8000;
 
 /** A failure that ends the request; `code` picks what Luma says. */
 export class T3Unavailable extends Error {
@@ -48,13 +51,20 @@ export class T3Session {
       if (!pairing) throw new T3Unavailable('unpaired');
       if (pairing.expiresAt && pairing.expiresAt < Date.now()) throw new T3Unavailable('expired');
       const route = pairing.pairedOn;
+      const ticketRequest = new AbortController();
       try {
-        const ticket = await websocketTicket(route, pairing.token);
-        const socket = new RpcSocket(socketUrl(route, ticket), () => {});
-        this.current = socket;
-        await timeout(socket.opened, CONNECT_MS);
-        return socket;
+        return await timeout(
+          (async () => {
+            const ticket = await websocketTicket(route, pairing.token, ticketRequest.signal);
+            const socket = new RpcSocket(socketUrl(route, ticket), () => {});
+            this.current = socket;
+            await socket.opened;
+            return socket;
+          })(),
+          CONNECT_MS,
+        );
       } catch (error) {
+        ticketRequest.abort();
         if (error instanceof PairingError && error.code === 'expired')
           throw new T3Unavailable('expired');
         throw new T3Unavailable('unreachable');
@@ -107,8 +117,13 @@ export class T3Session {
     });
   }
 
+  /** Commands T3 Code refuses throw `RpcError`; silence throws `T3Unavailable`. */
   async dispatch(command: Command) {
-    await dispatchCommand(await this.connect(), command);
+    const socket = await this.connect();
+    await timeout(dispatchCommand(socket, command), DISPATCH_MS).catch((error) => {
+      if (error instanceof RpcError) throw error;
+      throw new T3Unavailable('unreachable');
+    });
   }
 
   close() {
