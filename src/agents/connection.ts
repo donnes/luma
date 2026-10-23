@@ -84,6 +84,8 @@ export class AgentsConnection {
   private upgradeTimer: ReturnType<typeof setInterval> | undefined;
   private connectedAt = 0;
   private cooldown = new Map<string, number>();
+  /** Routes that last answered as another environment, until one answers as this one again. */
+  private mismatched = new Set<string>();
   private focusedThread: string | null = null;
   private threadStream: { cancel: () => void } | null = null;
   private watchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -118,12 +120,14 @@ export class AgentsConnection {
   async pair(address: string, code: string, deviceLabel: string) {
     const pairing = await pair(address, code, deviceLabel);
     this.disconnect();
+    this.mismatched.clear();
     this.set({ pairing, status: 'paused', shell: emptyShell(), detail: null, route: null });
     this.resume();
   }
 
   unpair() {
     this.disconnect();
+    this.mismatched.clear();
     savePairing(null);
     this.set({ pairing: null, status: 'unpaired', shell: emptyShell(), detail: null, route: null });
   }
@@ -174,12 +178,19 @@ export class AgentsConnection {
       ),
     );
     if (attempt !== this.attempt) return;
+    routes.forEach((route, index) => {
+      if (matches[index] === true) this.mismatched.delete(route.url);
+      else if (matches[index] === false) this.mismatched.add(route.url);
+    });
     // Routes that answered as this environment first, in rank order; silent
     // ones are a last resort since the check itself can be what's blocked. A
-    // route that answers as another environment never sees the token.
+    // route that answered as another environment never sees the token, even
+    // when a later probe goes silent.
     const order = [
       ...routes.filter((_, index) => matches[index] === true),
-      ...routes.filter((_, index) => matches[index] === null),
+      ...routes.filter(
+        (route, index) => matches[index] === null && !this.mismatched.has(route.url),
+      ),
     ];
     for (const route of order) {
       try {

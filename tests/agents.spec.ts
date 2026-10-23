@@ -157,24 +157,46 @@ test('Settings has no pairing; the connection lives in the app', async ({ page }
   await expect(page.getByLabel('T3 Code address')).toBeVisible();
 });
 
+// The same token, saved as if Luma had paired earlier.
+const seedPairing = (page: Page, pairedOn: { url: string; kind: string }, routes = [pairedOn]) =>
+  page.addInitScript((pairing) => localStorage.setItem('luma.agents.v1', JSON.stringify(pairing)), {
+    environmentId: 'env-1',
+    label: 'workstation',
+    token: 'token-1',
+    expiresAt: Date.now() + 86400000,
+    pairedOn,
+    routes,
+  });
+
+// The Fire TV shell, which can host T3 Code's web app in a second WebView.
+async function fakeWebAppShell(page: Page) {
+  const opened: string[][] = [];
+  await page.exposeFunction('recordOpenWebApp', (url: string, then: string) =>
+    opened.push([url, then]),
+  );
+  await page.addInitScript(() => {
+    const w = window as typeof window & {
+      recordOpenWebApp: (url: string, then: string) => void;
+      LumaAndroid: object;
+    };
+    w.LumaAndroid = {
+      isTV: () => false,
+      openWebApp: (url: string, then: string) => w.recordOpenWebApp(url, then),
+    };
+  });
+  return opened;
+}
+
+const cors = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-headers': 'authorization, content-type',
+};
+const other = 'http://100.100.1.2:3773';
+const otherRoute = { url: `${other}/`, kind: 'tailnet' };
+
 test('the token never goes to an address that answers as another server', async ({ page }) => {
   const lan = { url: `${server}/`, kind: 'lan' };
-  const other = 'http://100.100.1.2:3773';
-  await page.addInitScript(
-    (pairing) => localStorage.setItem('luma.agents.v1', JSON.stringify(pairing)),
-    {
-      environmentId: 'env-1',
-      label: 'workstation',
-      token: 'token-1',
-      expiresAt: Date.now() + 86400000,
-      pairedOn: lan,
-      routes: [lan, { url: `${other}/`, kind: 'tailnet' }],
-    },
-  );
-  const cors = {
-    'access-control-allow-origin': '*',
-    'access-control-allow-headers': 'authorization, content-type',
-  };
+  await seedPairing(page, lan, [lan, otherRoute]);
   // The paired server answers but can't mint a ticket right now.
   await page.route(`${server}/**`, (route) => {
     const { pathname } = new URL(route.request().url());
@@ -204,3 +226,96 @@ test('the token never goes to an address that answers as another server', async 
   expect(leaked).toEqual([]);
   await expect(page.getByText('T3 Code is out of reach.')).toBeVisible();
 });
+
+test('an address that answered as another server stays untrusted when its check fails', async ({
+  page,
+}) => {
+  const lan = { url: `${server}/`, kind: 'lan' };
+  await seedPairing(page, lan, [lan, otherRoute]);
+  // The paired server answers but can't mint a ticket right now, so Luma retries.
+  let tickets = 0;
+  await page.route(`${server}/**`, (route) => {
+    const { pathname } = new URL(route.request().url());
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ headers: cors });
+    if (pathname === '/.well-known/t3/environment')
+      return route.fulfill({
+        headers: cors,
+        json: { environmentId: 'env-1', label: 'workstation' },
+      });
+    if (pathname === '/api/auth/websocket-ticket') tickets++;
+    return route.fulfill({ status: 503, headers: cors });
+  });
+  // Another T3 Code server answers once, then its check fails on the retry.
+  let probes = 0;
+  const leaked: string[] = [];
+  await page.route(`${other}/**`, async (route) => {
+    const { pathname } = new URL(route.request().url());
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ headers: cors });
+    const authorization = await route.request().headerValue('authorization');
+    if (authorization) leaked.push(authorization);
+    if (pathname !== '/.well-known/t3/environment')
+      return route.fulfill({ status: 401, headers: cors });
+    if (++probes > 1) return route.fulfill({ status: 503, headers: cors });
+    return route.fulfill({ headers: cors, json: { environmentId: 'env-2', label: 'laptop' } });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Apps', exact: true }).click();
+  await page.getByRole('button', { name: 'Open T3 Code', exact: true }).click();
+  // A third ticket request means the retry has tried every route it trusts.
+  await expect.poll(() => leaked.length > 0 || tickets >= 3, { timeout: 10000 }).toBe(true);
+  expect(leaked).toEqual([]);
+  expect(probes).toBeGreaterThanOrEqual(2);
+  await expect(page.getByText('T3 Code is out of reach.')).toBeVisible();
+});
+
+test('Open T3 Code pairs the web app on the paired server', async ({ page }) => {
+  const minted: (string | null)[] = [];
+  await mockT3(page);
+  // Registered after mockT3, so it handles this path first.
+  await page.route(`${server}/api/auth/pairing-token`, async (route) => {
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ headers: cors });
+    minted.push(await route.request().headerValue('authorization'));
+    return route.fulfill({ headers: cors, json: { credential: 'WEB-CODE' } });
+  });
+  await seedPairing(page, { url: `${server}/`, kind: 'lan' });
+  const opened = await fakeWebAppShell(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Apps', exact: true }).click();
+  await page.getByRole('button', { name: 'Open T3 Code', exact: true }).click();
+  await page.locator('[data-focusable="agents-open-t3"]').click();
+  await expect.poll(() => opened).toEqual([[`${server}/pair#token=WEB-CODE`, `${server}/`]]);
+  expect(minted).toEqual(['Bearer token-1']);
+});
+
+for (const [name, trigger] of [
+  ['Open T3 Code', (page: Page) => page.locator('[data-focusable="agents-open-t3"]').click()],
+  [
+    'the shell asking to re-pair',
+    (page: Page) => page.evaluate(() => window.dispatchEvent(new Event('luma:t3-repair'))),
+  ],
+] as const)
+  test(`${name} never sends the token to another server at the paired address`, async ({
+    page,
+  }) => {
+    // The paired address now belongs to a different T3 Code server.
+    await seedPairing(page, otherRoute);
+    const opened = await fakeWebAppShell(page);
+    const leaked: string[] = [];
+    await page.route(`${other}/**`, async (route) => {
+      const { pathname } = new URL(route.request().url());
+      if (route.request().method() === 'OPTIONS') return route.fulfill({ headers: cors });
+      const authorization = await route.request().headerValue('authorization');
+      if (authorization) leaked.push(authorization);
+      if (pathname !== '/.well-known/t3/environment')
+        return route.fulfill({ status: 401, headers: cors });
+      return route.fulfill({ headers: cors, json: { environmentId: 'env-2', label: 'laptop' } });
+    });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Apps', exact: true }).click();
+    await page.getByRole('button', { name: 'Open T3 Code', exact: true }).click();
+    await expect(page.getByText('T3 Code is out of reach.')).toBeVisible();
+    await trigger(page);
+    await expect(page.getByRole('alert')).toContainText(/open T3 Code/);
+    expect(leaked).toEqual([]);
+    expect(opened).toEqual([]);
+  });
