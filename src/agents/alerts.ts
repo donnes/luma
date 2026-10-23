@@ -38,15 +38,27 @@ export const agentAlert = (
 // or off doesn't announce again what the other side did.
 const STORAGE_KEY = 'luma.agentAlerts.v1';
 
+/**
+ * The history, or null before the first alert. Throws when the Fire TV shell
+ * can't read it: taken as empty, every pending request would count as already
+ * seen and its alert would be lost, so the caller waits for the next update.
+ */
 export function loadSeen(): string[] | null {
-  try {
-    const seen: unknown = JSON.parse(
-      agentAlertHistory() ?? localStorage.getItem(STORAGE_KEY) ?? 'null',
-    );
-    return Array.isArray(seen) ? seen.filter((id) => typeof id === 'string') : null;
-  } catch {
-    return null;
+  let json = agentAlertHistory();
+  if (json === undefined) {
+    try {
+      json = localStorage.getItem(STORAGE_KEY) ?? 'null';
+    } catch {
+      return null;
+    }
   }
+  let seen: unknown = null;
+  try {
+    seen = JSON.parse(json);
+  } catch {
+    /* A damaged history starts over. */
+  }
+  return Array.isArray(seen) ? seen.filter((id) => typeof id === 'string') : null;
 }
 
 export function saveSeen(seen: string[]) {

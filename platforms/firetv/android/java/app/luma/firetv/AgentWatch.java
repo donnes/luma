@@ -121,9 +121,12 @@ final class AgentWatch {
    * So switching HomeGuard on or off doesn't announce again what the other
    * side did.
    */
-  static String loadSeen(Context context) {
-    String seen = read(context, SEEN_FILE);
-    return seen == null ? "null" : seen;
+  static String loadSeen(Context context) throws IOException {
+    try (InputStream in = new FileInputStream(new File(context.getFilesDir(), SEEN_FILE))) {
+      return readAll(in);
+    } catch (FileNotFoundException e) {
+      return "null";
+    }
   }
 
   static void saveSeen(Context context, String json) {

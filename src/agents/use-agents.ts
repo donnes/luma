@@ -113,12 +113,20 @@ export function useAgentAlerts() {
         shell = state.shell;
         // HomeGuard can be turned on or off while the page lives on, so who
         // alerts is decided each time.
+        let before: string[] | null | undefined;
         if (!canAlertOverApps()) {
           // Read every time: HomeGuard may have kept the history since the
           // last update. Toggling HomeGuard can still repeat one alert while
           // the page lags behind its stream, which is rare enough to accept.
-          const before = loadSeen();
-          const taken = takeAlerts(shell, before);
+          try {
+            before = loadSeen();
+          } catch {
+            // Unreadable for now: the next update tries again.
+            shell = undefined;
+          }
+        }
+        if (before !== undefined) {
+          const taken = takeAlerts(state.shell, before);
           if (taken.seen !== before) saveSeen(taken.seen);
           const kept = new Set(taken.seen);
           ended = before?.filter((id) => !kept.has(id)) ?? [];

@@ -15,6 +15,7 @@ import android.os.Looper;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -152,7 +153,12 @@ public final class Shell {
   /** The alert history the page shares with HomeGuard; see {@link AgentWatch#loadSeen}. */
   @JavascriptInterface
   public String agentAlertHistory() {
-    return AgentWatch.loadSeen(activity);
+    try {
+      return AgentWatch.loadSeen(activity);
+    } catch (IOException e) {
+      // Reaches the page as an exception, so it doesn't take this for no history.
+      throw new IllegalStateException("Reading the agent alert history failed", e);
+    }
   }
 
   @JavascriptInterface

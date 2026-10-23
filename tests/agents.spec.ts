@@ -563,7 +563,12 @@ test('a queued alert whose request was answered meanwhile never shows', async ({
 
 // The Fire TV shell with HomeGuard on. HomeGuard finds the alerts and keeps
 // the history of alerted requests, which it shares with the page.
-type FireTV = typeof window & { __homeGuard: boolean; __listening: boolean; __history: string };
+type FireTV = typeof window & {
+  __homeGuard: boolean;
+  __listening: boolean;
+  __history: string;
+  __historyFails?: boolean;
+};
 async function fireTV(page: Page, history: string[] | null = null) {
   await page.addInitScript((history) => {
     const w = window as FireTV;
@@ -579,7 +584,10 @@ async function fireTV(page: Page, history: string[] | null = null) {
         canAlertOverApps: () => w.__homeGuard,
         watchAgents: () => {},
         listenForAgentAlerts: () => (w.__listening = true),
-        agentAlertHistory: () => w.__history,
+        agentAlertHistory: () => {
+          if (w.__historyFails) throw new Error('Reading the agent alert history failed');
+          return w.__history;
+        },
         saveAgentAlertHistory: (json: string) => (w.__history = json),
       },
     });
@@ -657,6 +665,23 @@ test('on Fire TV, the page reads what HomeGuard recorded while briefly on', asyn
     asking(8, 'thread-4', 'Review the overlay copy', 'r7'),
   );
   await expect(toast).toHaveText('Review the overlay copy', { timeout: 10000 });
+});
+
+test('on Fire TV, an alert waits out a history the shell cannot read', async ({ page }) => {
+  await fireTV(page, ['r1']);
+  const { pushShell } = await mockT3(page);
+  await pairOnFireTV(page);
+  await page.evaluate(() => Object.assign(window, { __homeGuard: false, __historyFails: true }));
+
+  // Without its history the page can't tell what's new, so it holds off.
+  pushShell(asking(6, 'thread-2', 'Second opinion on the overlay', 'r6'));
+  await expect(page.locator('.inbox-button-count')).toHaveText('2');
+  await expect(page.locator('.agent-toast')).toHaveCount(0);
+
+  // Readable again: the next update alerts what it held off on.
+  await page.evaluate(() => Object.assign(window, { __historyFails: false }));
+  pushShell(asking(7, 'thread-3', 'Pick a name for the release', null));
+  await expect(page.locator('.agent-toast strong')).toHaveText('Second opinion on the overlay');
 });
 
 test('on Fire TV, a queued alert leaves once HomeGuard sees its request end', async ({ page }) => {
