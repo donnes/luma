@@ -706,6 +706,42 @@ test('on Fire TV, a queued alert leaves once answered even while the history is 
   await expect(toast).toHaveCount(0);
 });
 
+test('on Fire TV, alerts HomeGuard passed on ahead of the page still show', async ({ page }) => {
+  await fireTV(page, ['r1']);
+  const { pushShell } = await mockT3(page);
+  await pairOnFireTV(page);
+  const toast = page.locator('.agent-toast strong');
+
+  // HomeGuard alerts two requests the page's stream hasn't brought yet.
+  await page.evaluate(() => Object.assign(window, { __history: '["r1","r6","r7"]' }));
+  await fromHomeGuard(
+    page,
+    'luma:agent-alert',
+    homeGuardAlert('r6', 'thread-2', 'Second opinion on the overlay'),
+  );
+  await fromHomeGuard(
+    page,
+    'luma:agent-alert',
+    homeGuardAlert('r7', 'thread-3', 'Pick a name for the release'),
+  );
+  await expect(toast).toHaveText('Second opinion on the overlay');
+
+  // HomeGuard goes off, and an unrelated update arrives while the history
+  // can't be read; then the stream catches up.
+  await page.evaluate(() => Object.assign(window, { __homeGuard: false, __historyFails: true }));
+  pushShell(asking(6, 'thread-4', 'Review the overlay copy', null));
+  await expect(page.getByText('Review the overlay copy')).toBeVisible();
+  await page.evaluate(() => Object.assign(window, { __historyFails: false }));
+  pushShell(
+    asking(7, 'thread-2', 'Second opinion on the overlay', 'r6'),
+    asking(8, 'thread-3', 'Pick a name for the release', 'r7'),
+  );
+  // Both still show, in order.
+  await expect(page.getByText('Pick a name for the release').first()).toBeVisible();
+  await expect(toast).toHaveText('Second opinion on the overlay');
+  await expect(toast).toHaveText('Pick a name for the release', { timeout: 10000 });
+});
+
 test('on Fire TV, a queued alert leaves once HomeGuard sees its request end', async ({ page }) => {
   await fireTV(page, ['r1']);
   await mockT3(page);

@@ -68,18 +68,19 @@ export function useAgentAlerts() {
     const connection = agentsConnection();
     let shell: Shell | undefined;
     let pairing: Pairing | null | undefined;
+    // Requests pending in the last shell this page saw. One that was and no
+    // longer is has ended, whoever alerted it; one the page hasn't seen yet,
+    // like an alert HomeGuard forwarded ahead of the page's stream, stays.
+    let pending = new Set<string>();
     // The history while this page finds alerts itself; undefined while
     // HomeGuard does and keeps it.
-    const sync = (alerts: AgentAlert[], ended: Iterable<string> = [], pending?: Set<string>) => {
+    const sync = (alerts: AgentAlert[], ended: Iterable<string> = []) => {
       const gone = new Set(ended);
       setQueue((queued) => {
         // The agents page already shows the agent it follows.
         const shown = connection.getState().detail?.threadId;
         const next = queued.filter(
-          ({ alert }) =>
-            !gone.has(alert.requestId) &&
-            (!pending || pending.has(alert.requestId)) &&
-            alert.threadId !== shown,
+          ({ alert }) => !gone.has(alert.requestId) && alert.threadId !== shown,
         );
         // One entry per request, even if the shell sends it twice.
         const requests = new Set(next.map(({ alert }) => alert.requestId));
@@ -113,9 +114,11 @@ export function useAgentAlerts() {
       }
       let alerts: AgentAlert[] = [];
       let ended: string[] = [];
-      let pending: Set<string> | undefined;
       if (state.shell !== shell && state.shell.ready) {
         shell = state.shell;
+        const was = pending;
+        pending = pendingRequests(state.shell);
+        ended = [...was].filter((id) => !pending.has(id));
         // HomeGuard can be turned on or off while the page lives on, so who
         // alerts is decided each time.
         let before: string[] | null | undefined;
@@ -126,24 +129,20 @@ export function useAgentAlerts() {
           try {
             before = loadSeen();
           } catch {
-            // Unreadable for now: the next update tries again. Queued alerts
-            // still leave once their request ends.
+            // Unreadable for now: the next update tries again.
             shell = undefined;
-            pending = pendingRequests(state.shell);
           }
         }
         if (before !== undefined) {
           const taken = takeAlerts(state.shell, before);
           if (taken.seen !== before) saveSeen(taken.seen);
-          const kept = new Set(taken.seen);
-          ended = before?.filter((id) => !kept.has(id)) ?? [];
           // This connection only runs while Luma is on screen.
           if (!document.hidden)
             alerts = taken.alerts.map((agent) => agentAlert(agent, t, state.pairing?.label ?? ''));
         }
       }
       // Also runs when the agents page opens an agent, whose alerts then leave.
-      sync(alerts, ended, pending);
+      sync(alerts, ended);
     };
     const show = (event: Event) => {
       if (event instanceof CustomEvent) sync([event.detail]);
