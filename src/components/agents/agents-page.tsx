@@ -1,7 +1,6 @@
 import {
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type MutableRefObject,
@@ -9,7 +8,7 @@ import {
 } from 'react';
 import { ArrowUpRight, Check, LoaderCircle, MessageCircle, Square, WifiOff } from 'lucide-react';
 import {
-  inboxGroups,
+  agentStatus,
   isWorking,
   lastAssistantText,
   modelLabel,
@@ -67,8 +66,7 @@ export function AgentsPage({
   notify,
 }: Props) {
   const { t } = useTranslation();
-  const { state, agents, connection } = useAgents();
-  const groups = useMemo(() => inboxGroups(state.shell), [state.shell]);
+  const { state, agents, inbox: groups, connection } = useAgents();
   const [selected, setSelected] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<ThreadShell | null>(null);
   const current = agents.find((agent) => agent.thread.id === selected) ?? agents[0] ?? null;
@@ -91,10 +89,12 @@ export function AgentsPage({
       if (conversation) {
         const id = conversation;
         onConversation(null);
+        // Threads opened from the inbox may have no card on the shelf.
         requestAnimationFrame(() =>
-          document
-            .querySelector<HTMLElement>(`[data-focusable="agent-${CSS.escape(id)}"]`)
-            ?.focus({ preventScroll: true }),
+          (
+            document.querySelector<HTMLElement>(`[data-focusable="agent-${CSS.escape(id)}"]`) ??
+            document.querySelector<HTMLElement>('[data-focusable="agents-inbox"]')
+          )?.focus({ preventScroll: true }),
         );
         return true;
       }
@@ -173,7 +173,7 @@ export function AgentsPage({
           agent={{
             thread: conversationThread,
             project: state.shell.projects.get(conversationThread.projectId),
-            status: agents.find((agent) => agent.thread.id === conversation)?.status ?? 'idle',
+            status: agentStatus(conversationThread),
           }}
           detail={detail}
           onReply={() => setReplyTo(conversationThread)}

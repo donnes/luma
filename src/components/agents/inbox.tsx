@@ -12,9 +12,9 @@ const groups: { key: keyof Inbox; label: MessageKey }[] = [
   { key: 'working', label: 'agentWorking' },
 ];
 
-// Takes everything as props and owns its styles, so it can render outside
-// Luma's pages too. Arrow keys move through `data-focusable` rows inside the
-// `data-focus-scope="dialog"` panel; Back closes it.
+// Takes everything as props, owns its styles and handles the remote itself,
+// so it works outside Luma's pages too: Up and Down move through the rows in
+// list order, OK opens one and Back closes the panel.
 export function InboxPanel({
   inbox,
   source,
@@ -29,41 +29,83 @@ export function InboxPanel({
 }) {
   const { t } = useTranslation();
   const panel = useRef<HTMLElement>(null);
+  // The focused row, so focus can stay with it, or near it, as rows come and go.
+  const focused = useRef({ id: '', index: 0 });
   const shown = groups.filter((group) => inbox[group.key].length);
+  const rows = () => [...(panel.current?.querySelectorAll<HTMLButtonElement>('.inbox-row') ?? [])];
 
+  // Registered before the first row takes focus, so that focus is tracked too.
   useLayoutEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
     const node = panel.current;
-    node?.querySelector<HTMLElement>('[data-focusable]')?.focus({ preventScroll: true });
-    // Runs before React removes the panel, so focus goes back to where it was
-    // instead of falling to the page and whatever claims it there.
+    if (!node) return;
+    const track = (event: FocusEvent) => {
+      const list = rows();
+      const index = list.findIndex((row) => row === event.target);
+      if (index >= 0) focused.current = { id: list[index].dataset.focusable ?? '', index };
+    };
+    // Only a pointer that moves picks a row. Rows scrolling under a resting
+    // pointer, as D-pad navigation does, must not take focus from the remote.
+    let last = { x: -1, y: -1 };
+    const hover = (event: PointerEvent) => {
+      const { clientX: x, clientY: y } = event;
+      if (event.pointerType !== 'mouse' || (x === last.x && y === last.y)) return;
+      last = { x, y };
+      if (event.target instanceof Element)
+        event.target.closest<HTMLElement>('.inbox-row')?.focus({ preventScroll: true });
+    };
+    node.addEventListener('focusin', track);
+    node.addEventListener('pointermove', hover);
     return () => {
-      if (node?.contains(document.activeElement) && previous?.isConnected)
-        previous.focus({ preventScroll: true });
+      node.removeEventListener('focusin', track);
+      node.removeEventListener('pointermove', hover);
     };
   }, []);
 
-  // Rows can come and go while the panel is open; keep the remote on one.
   useLayoutEffect(() => {
-    if (!panel.current?.contains(document.activeElement))
-      panel.current?.querySelector<HTMLElement>('[data-focusable]')?.focus({ preventScroll: true });
+    const previous = document.activeElement as HTMLElement | null;
+    rows()[0]?.focus({ preventScroll: true });
+    // Runs before React removes the panel, so focus goes back to where it was
+    // instead of falling to the page and whatever claims it there.
+    return () => {
+      if (previous?.isConnected) previous.focus({ preventScroll: true });
+    };
+  }, []);
+
+  // Live updates can move or remove the focused row: follow it, or land on the
+  // row that took its place, or on the panel itself once the list is empty.
+  useLayoutEffect(() => {
+    const node = panel.current;
+    if (!node || node.contains(document.activeElement)) return;
+    const list = rows();
+    (
+      list.find((row) => row.dataset.focusable === focused.current.id) ??
+      list[Math.min(focused.current.index, list.length - 1)] ??
+      node
+    ).focus({ preventScroll: true });
   });
 
-  // Back belongs to the panel while it's open, ahead of the page behind it.
+  // The remote belongs to the panel while it's open, ahead of the page behind it.
   useEffect(() => {
-    const close = (event: KeyboardEvent) => {
+    const onKey = (event: KeyboardEvent) => {
+      const list = rows();
+      const index = list.findIndex((row) => row === document.activeElement);
       if (
-        event.key !== 'Escape' &&
-        event.keyCode !== 461 &&
-        !(event.key === 'Backspace' && !(event.target instanceof HTMLInputElement))
-      )
-        return;
+        event.key === 'Escape' ||
+        event.keyCode === 461 ||
+        (event.key === 'Backspace' && !(event.target instanceof HTMLInputElement))
+      ) {
+        if (!event.repeat) onClose();
+      } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        const next = list[Math.max(0, index + (event.key === 'ArrowUp' ? -1 : 1))];
+        next?.focus({ preventScroll: true });
+      } else if (event.key === 'Enter' || event.keyCode === 13) {
+        if (!event.repeat) list[index]?.click();
+      } else if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
       event.preventDefault();
       event.stopPropagation();
-      if (!event.repeat) onClose();
     };
-    window.addEventListener('keydown', close, true);
-    return () => window.removeEventListener('keydown', close, true);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [onClose]);
 
   return (
@@ -74,6 +116,7 @@ export function InboxPanel({
       aria-modal="true"
       aria-labelledby="inbox-title"
       data-focus-scope="dialog"
+      tabIndex={-1}
     >
       <header className="inbox-header">
         <T3Glyph className="inbox-glyph" />
@@ -114,9 +157,6 @@ function InboxRow({ agent, onOpen }: { agent: Agent; onOpen: (threadId: string) 
           const row = event.currentTarget;
           const target = row.closest('li')?.previousElementSibling ? row : row.closest('section');
           target?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
-        }}
-        onPointerEnter={(event) => {
-          if (event.pointerType === 'mouse') event.currentTarget.focus({ preventScroll: true });
         }}
         onClick={() => onOpen(thread.id)}
       >

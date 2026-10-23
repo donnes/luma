@@ -265,3 +265,55 @@ test('the inbox groups threads, the remote moves through them and OK opens one',
     page.getByRole('heading', { name: 'Fix settings scrolling from wider gutter areas' }),
   ).toBeVisible();
 });
+
+test('a request past the shelf opens from the inbox with its approval and counts on the badge', async ({
+  page,
+}) => {
+  // Thirteen approvals: the shelf keeps the twelve that waited longest.
+  const threads = Array.from({ length: 13 }, (_, index) =>
+    inboxThread(`approve-${index + 1}`, 'p1', `Approval ${index + 1}`, {
+      status: 'running',
+      activityRunStatus: 'waiting',
+      pendingRuntimeRequest: { id: 'r1', kind: 'command', createdAt: minutesAgo(30 - index) },
+    }),
+  );
+  await mockT3(page, { ...inboxSnapshot, snapshot: { ...inboxSnapshot.snapshot, threads } });
+  await page.goto('/');
+  await pair(page);
+
+  const button = page.locator('[data-focusable="agents-inbox"]');
+  await expect(button).toHaveAccessibleName('Inbox 13 waiting for you');
+  await button.click();
+  await page
+    .getByRole('dialog', { name: 'Inbox' })
+    .getByRole('button', { name: /^Approval 13,/ })
+    .click();
+  await expect(page.getByRole('heading', { name: 'Approval 13' })).toBeVisible();
+  await expect(
+    page.locator('.conversation [data-focusable="agent-decision-accept"]'),
+  ).toBeFocused();
+
+  // No shelf card to return to, so Back lands on the Inbox button.
+  await page.keyboard.press('Escape');
+  await expect(button).toBeFocused();
+});
+
+test('the inbox panel moves, opens and closes with the remote on its own', async ({ page }) => {
+  await page.route('**/inbox-standalone.html', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: '<!doctype html><div id="root"></div><script type="module" src="/tests/inbox-standalone.tsx"></script>',
+    }),
+  );
+  await page.goto('/inbox-standalone.html');
+  const inbox = page.getByRole('dialog', { name: 'Inbox' });
+  await expect(inbox.getByRole('button', { name: /^approve,/ })).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(inbox.getByRole('button', { name: /^finished,/ })).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowUp');
+  await expect(inbox.getByRole('button', { name: /^finished,/ })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('body')).toHaveAttribute('data-log', 'open finished;close;');
+});

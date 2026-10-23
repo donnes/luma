@@ -25,6 +25,10 @@
 .inbox * {
   box-sizing: border-box;
 }
+/* With no rows left the panel itself holds focus, so Back still works. */
+.inbox:focus {
+  outline: none;
+}
 .inbox-header {
   display: flex;
   align-items: center;
