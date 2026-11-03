@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Check, ShieldCheck, X } from 'lucide-react';
-import type { PendingApproval, PendingQuestion } from '../../agents/model';
-import type { ApprovalDecision, UserInputQuestion } from '../../agents/types';
+import { answerValue, type PendingApproval, type PendingQuestion } from '../../agents/model';
+import type { ApprovalDecision } from '../../agents/types';
 import { useTranslation, type MessageKey } from '../../i18n';
 
 const decisionLabels: Record<ApprovalDecision, MessageKey> = {
@@ -77,9 +77,6 @@ export function ApprovalPills({
     </>
   );
 }
-
-export const answerValue = (option: UserInputQuestion['options'][number]) =>
-  option.value ?? option.label;
 
 /** True when the question can be answered with a single press from the Spotlight. */
 export const isQuickQuestion = (question: PendingQuestion) =>
