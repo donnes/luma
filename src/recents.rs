@@ -45,12 +45,7 @@ impl Command {
 fn excluded(id: &str) -> bool {
     matches!(
         id,
-        APP_ID
-            | HOME_ID
-            | FULL_HOME_ID
-            | "com.luma.native"
-            | "com.luma.launcher"
-            | "com.luma.launcher.native"
+        APP_ID | HOME_ID | FULL_HOME_ID | "com.luma.native" | "com.luma.launcher.native"
     )
 }
 
