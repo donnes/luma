@@ -1,6 +1,5 @@
 package app.luma.firetv;
 
-import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
@@ -16,6 +15,7 @@ import android.os.Looper;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -39,13 +39,13 @@ public final class Shell {
   /** Same application id as the webOS package, excluded from the library. */
   private static final String SELF = "com.luma.launcher";
 
-  private final Activity activity;
+  private final MainActivity activity;
   private final Handler main;
   private Catalog catalog;
   /** Encoded tile art per package; a package without art maps to null. */
   private final HashMap<String, byte[]> art = new HashMap<>();
 
-  Shell(Activity activity) {
+  Shell(MainActivity activity) {
     this.activity = activity;
     this.main = new Handler(Looper.getMainLooper());
   }
@@ -130,6 +130,40 @@ public final class Shell {
   private static boolean isWeb(String url) {
     String scheme = url == null ? null : Uri.parse(url).getScheme();
     return "http".equals(scheme) || "https".equals(scheme);
+  }
+
+  /** Whether {@link HomeGuard} is on to watch agents and alert over other apps. */
+  @JavascriptInterface
+  public boolean canAlertOverApps() {
+    return HomeGuard.isEnabled(activity);
+  }
+
+  /** Hands {@link HomeGuard} the pairing to watch agents with; empty once unpaired. */
+  @JavascriptInterface
+  public void watchAgents(String config) {
+    HomeGuard.watchAgents(activity, config);
+  }
+
+  /** The page now listens for HomeGuard's alerts; the ones held back meanwhile follow. */
+  @JavascriptInterface
+  public void listenForAgentAlerts() {
+    main.post(activity::onPageListening);
+  }
+
+  /** The alert history the page shares with HomeGuard; see {@link AgentWatch#loadSeen}. */
+  @JavascriptInterface
+  public String agentAlertHistory() {
+    try {
+      return AgentWatch.loadSeen(activity);
+    } catch (IOException e) {
+      // Reaches the page as an exception, so it doesn't take this for no history.
+      throw new IllegalStateException("Reading the agent alert history failed", e);
+    }
+  }
+
+  @JavascriptInterface
+  public void saveAgentAlertHistory(String json) {
+    if (json != null) AgentWatch.saveSeen(activity, json);
   }
 
   @JavascriptInterface
