@@ -923,6 +923,16 @@ fn system_category_owns_refresh_and_quit_and_restores_sidebar_focus() {
     state.direction(Direction::Right, &controls(&state));
     assert_eq!(state.focus, Target::CheckUpdates);
     state.direction(Direction::Down, &controls(&state));
+    assert_eq!(state.focus, Target::TvSettings);
+    assert_eq!(
+        state.activate(),
+        vec![Effect::Launch("com.palm.app.settings".into())]
+    );
+    state.direction(Direction::Left, &controls(&state));
+    assert_eq!(state.focus, Target::Sidebar(crate::state::SYSTEM_SECTION));
+    state.direction(Direction::Right, &controls(&state));
+    state.direction(Direction::Down, &controls(&state));
+    state.direction(Direction::Down, &controls(&state));
     assert_eq!(state.focus, Target::Setting(3));
     assert_eq!(state.activate(), vec![Effect::Reload]);
     state.direction(Direction::Down, &controls(&state));
@@ -2805,25 +2815,6 @@ fn clock_date_and_home_input_descriptions_use_larger_text() {
 }
 
 #[test]
-fn tv_settings_button_is_centered_alongside_navigation() {
-    let rendered = scene(&ready());
-    let button = rendered
-        .controls
-        .iter()
-        .find(|control| control.target == Target::TvSettings)
-        .unwrap();
-    assert!((button.rect.y + button.rect.h / 2. - (42.5 + 68.6 / 2.)).abs() < 0.01);
-    assert_eq!(button.rect.h, 60.);
-    assert_eq!(button.rect.w, button.rect.h);
-    assert_eq!(button.rect.x + button.rect.w, 1836.);
-    let (x, y) = button.rect.center();
-    assert_eq!(
-        ready().hit_test(&rendered.controls, x, y),
-        Some(Target::TvSettings)
-    );
-}
-
-#[test]
 fn greeting_visibility_toggle_persists_without_clearing_name_or_hiding_date() {
     use crate::{renderer::Draw, state::Subpage};
     let legacy: Preferences = serde_json::from_str(r#"{"greeting_name":"Ana"}"#).unwrap();
@@ -3018,7 +3009,7 @@ fn update_card_shows_both_versions_and_explicitly_starts_installation() {
             Some(Target::InstallUpdate)
         );
         state.direction(Direction::Down, &rendered.controls);
-        assert_eq!(state.focus, Target::Setting(3));
+        assert_eq!(state.focus, Target::TvSettings);
         state.focus = Target::InstallUpdate;
         state.direction(Direction::Left, &rendered.controls);
         assert_eq!(state.focus, Target::Sidebar(crate::state::SYSTEM_SECTION));

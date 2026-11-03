@@ -2309,6 +2309,21 @@
     "nl": "Tv-instellingen",
     "sv": "TV-inställningar"
   },
+  "fireTvSettings": {
+    "zh-tw": "Fire TV 設定",
+    "en": "Fire TV settings",
+    "de": "Fire TV-Einstellungen",
+    "es": "Ajustes de Fire TV",
+    "zh": "Fire TV 设置",
+    "pt": "Configurações do Fire TV",
+    "it": "Impostazioni Fire TV",
+    "ru": "Настройки Fire TV",
+    "pl": "Ustawienia Fire TV",
+    "fr": "Paramètres Fire TV",
+    "vi": "Cài đặt Fire TV",
+    "nl": "Fire TV-instellingen",
+    "sv": "Fire TV-inställningar"
+  },
   "loadingWeather": {
     "zh-tw": "正在載入天氣…",
     "en": "Loading weather…",

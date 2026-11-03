@@ -18,8 +18,8 @@ webOS, built as SDL's `libmain.so` for 32-bit ARM (`armeabi-v7a`) and run by an
     out, except Prime Video and YouTube.
   - `launchApp(id: String): String`, JSON `{ "error"?: string }`. Each launch
     resolves the leanback-preferred launchable activity through PackageManager.
-  - `openSettings(): String`. The header's TV settings button launches webOS's
-    `com.palm.app.settings`, which Android answers with this. Fire OS answers
+  - `openSettings(): String`. The Fire TV settings row in Settings → System
+    launches webOS's `com.palm.app.settings`, which Android answers with this. Fire OS answers
     Android's standard Settings intent with an empty stub, so the shell starts
     Amazon's `com.amazon.tv.launcher/.ui.MainSettingsActivity` and falls back to
     the standard intent on other Android TV devices.
