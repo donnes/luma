@@ -1,18 +1,18 @@
 {
   "id": "com.luma.launcher",
-  "version": "1.0.3",
+  "version": "2.16.2",
   "vendor": "Luma",
-  "type": "web",
-  "main": "index.html",
+  "type": "native",
+  "main": "luma",
   "title": "Luma",
   "icon": "app-icon.png",
   "largeIcon": "app-icon-large.png",
-  "appDescription": "A modern webOS launcher.",
+  "appDescription": "A remote-first native webOS launcher.",
   "resolution": "1920x1080",
   "appCategory": ["home"],
   "requiredACG": ["application.launcher", "application.query", "lunabus.query"],
-  "disableBackHistoryAPI": true,
   "handlesRelaunch": false,
   "iconColor": "#25272d",
-  "accessibility": { "supportsAudioGuidance": true }
+  "splashBackground": "splash.png",
+  "bgColor": "#17191c"
 }

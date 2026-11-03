@@ -27,12 +27,8 @@ esac
     [ -f /tmp/luma-boot-done ] && exit 0
     [ -f "$APP_DIR/appinfo.json" ] || exit 0
     sleep 25
-    # webOS 10+ root-shell launch uses -t.
-    case "$(cat /etc/starfish-release 2>/dev/null)" in
-      *" 10."*|*" 11."*) MODE=-t ;;
-      *) MODE=-n ;;
-    esac
-    RESULT="$(/usr/bin/luna-send "$MODE" 1 -w 5000 luna://com.webos.service.applicationmanager/launch '{"id":"com.luma.launcher"}' 2>/dev/null)"
+    # -n prints the reply. -t is timing mode, not a firmware-specific flag.
+    RESULT="$(/usr/bin/luna-send -n 1 -w 5000 luna://com.webos.service.applicationmanager/launch '{"id":"com.luma.launcher"}' 2>/dev/null)"
     printf '%s\n' "$RESULT"
     case "$RESULT" in *'"returnValue":true'*|*'"returnValue": true'*) touch /tmp/luma-boot-done ;; esac
 ) </dev/null >/tmp/luma-boot.log 2>&1 &

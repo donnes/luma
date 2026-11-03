@@ -1,112 +1,191 @@
-// One-time asset preparation. Downloads are build-time only, never TV runtime.
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import sharp from 'sharp';
+import { generateVectorAssets } from './vector-assets.mjs';
 
 const root = path.resolve(import.meta.dirname, '..');
-const assets = [
-  [
-    'public/wallpapers/dunes.jpg',
-    'https://images.unsplash.com/photo-1509316785289-025f5b846b35?auto=format&fit=crop&w=2560&q=88',
-  ],
-  [
-    'public/wallpapers/summit.jpg',
-    'https://images.unsplash.com/photo-1454496522488-7a8e488e8606?auto=format&fit=crop&w=2560&q=88',
-  ],
-  [
-    'public/wallpapers/san-francisco.jpg',
-    'https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=2560&q=88',
-  ],
-  [
-    'public/wallpapers/forest.jpg',
-    'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&w=2560&q=88',
-  ],
-  [
-    'public/wallpapers/yosemite.jpg',
-    'https://upload.wikimedia.org/wikipedia/commons/thumb/1/13/Tunnel_View%2C_Yosemite_Valley%2C_Yosemite_NP_-_Diliff.jpg/3840px-Tunnel_View%2C_Yosemite_Valley%2C_Yosemite_NP_-_Diliff.jpg',
-  ],
-  [
-    'public/wallpapers/northern-lights.jpg',
-    'https://images.unsplash.com/photo-1531366936337-7c912a4589a7?auto=format&fit=crop&w=2560&q=88',
-  ],
-  [
-    'public/fonts/inter-latin.woff2',
-    'https://cdn.jsdelivr.net/fontsource/fonts/inter:vf@latest/latin-wght-normal.woff2',
-  ],
-  ['public/fonts/ofl.txt', 'https://raw.githubusercontent.com/rsms/inter/master/LICENSE.txt'],
-  [
-    'public/logos/apple-tv.svg',
-    'https://upload.wikimedia.org/wikipedia/commons/f/f7/Apple_TV_logo.svg',
-  ],
-  [
-    'public/logos/prime-video.svg',
-    'https://upload.wikimedia.org/wikipedia/commons/1/11/Amazon_Prime_Video_logo.svg',
-  ],
-  [
-    'public/logos/disney-plus.svg',
-    'https://upload.wikimedia.org/wikipedia/commons/3/3e/Disney%2B_logo.svg',
-  ],
-  [
-    'public/logos/jellyfin.svg',
-    'https://raw.githubusercontent.com/jellyfin/jellyfin-ux/master/branding/SVG/banner-dark.svg',
-  ],
-  [
-    'public/logos/netflix.svg',
-    'https://upload.wikimedia.org/wikipedia/commons/0/08/Netflix_2015_logo.svg',
-  ],
-  [
-    'public/logos/youtube.svg',
-    'https://upload.wikimedia.org/wikipedia/commons/2/20/YouTube_2024.svg',
-  ],
-  [
-    'public/logos/arte.svg',
-    'https://upload.wikimedia.org/wikipedia/commons/e/ee/Arte_Logo_2026.svg',
-  ],
-  ['public/logos/zdf.svg', 'https://upload.wikimedia.org/wikipedia/commons/c/c1/ZDF_logo.svg'],
-  [
-    'public/logos/das-erste.svg',
-    'https://upload.wikimedia.org/wikipedia/commons/c/ca/Das_Erste_2014.svg',
-  ],
-];
-for (const [relative, url] of assets) {
-  const destination = path.join(root, relative);
-  await fs.mkdir(path.dirname(destination), { recursive: true });
-  try {
-    await fs.access(destination);
-    console.log(`Already bundled: ${relative}`);
-    continue;
-  } catch {}
-  const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
-  if (!response.ok) throw new Error(`${url}: ${response.status}`);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length < 100) throw new Error(`Unexpectedly small asset: ${relative}`);
-  if (relative.endsWith('.svg') && !bytes.toString('utf8').includes('<svg'))
-    throw new Error(`Not an SVG asset: ${relative}`);
-  let prepared = bytes;
-  if (relative === 'public/logos/youtube.svg') {
-    const original = bytes.toString('utf8');
-    const whiteWordmark = original.replace('id="g2362"', 'id="g2362" fill="#ffffff"');
-    if (whiteWordmark === original) throw new Error('YouTube wordmark group was not found.');
-    prepared = Buffer.from(whiteWordmark);
-  }
-  const output = relative.endsWith('.jpg')
-    ? await sharp(prepared)
-        .rotate()
-        .resize({ width: 2560, withoutEnlargement: true })
-        .jpeg({ quality: 88 })
-        .toBuffer()
-    : prepared;
-  await fs.writeFile(destination, output);
-  console.log(`Bundled ${relative} (${output.length} bytes)`);
+const source = path.join(root, 'assets');
+const out = path.join(root, '.build/assets');
+const highResolution = process.argv.includes('--4k');
+// Retire generated dumps from older asset caches as well as the source assets.
+for (const legacy of ['app-icons', 'icons.json', 'colors.json']) {
+  await fs.rm(path.join(out, legacy), { recursive: true, force: true });
+}
+for (const directory of ['wallpapers', 'thumbnails', 'logos', 'ui-icons', 'surfaces', 'splash']) {
+  await fs.mkdir(path.join(out, directory), { recursive: true });
 }
 
-const thumbnails = path.join(root, 'public/wallpaper-thumbnails');
-await fs.mkdir(thumbnails, { recursive: true });
-for (const [relative] of assets) {
-  if (!relative.endsWith('.jpg')) continue;
-  await sharp(path.join(root, relative))
-    .resize(480, 270, { fit: 'cover' })
-    .jpeg({ quality: 78 })
-    .toFile(path.join(thumbnails, path.basename(relative)));
-  console.log(`Prepared thumbnail: ${path.basename(relative)}`);
+// Decode the existing licensed font, rather than introducing a different font.
+const font = path.join(out, 'font.woff2');
+await fs.copyFile(path.join(source, 'fonts/inter-latin.woff2'), font);
+const decoded = spawnSync('woff2_decompress', [font], { encoding: 'utf8' });
+if (decoded.error || decoded.status !== 0) {
+  throw new Error('Font conversion needs woff2_decompress. Run pnpm assets inside nix develop.', {
+    cause: decoded.error ?? new Error(decoded.stderr),
+  });
 }
+await fs.rm(font);
+const cjk = path.join(source, 'fonts/noto-sans-sc.ttf');
+const hangul = path.join(source, 'fonts/noto-sans-kr.ttf');
+try {
+  await fs.access(cjk);
+  await fs.access(hangul);
+} catch {
+  throw new Error('Prepare the bundled Chinese and Korean fonts with pnpm assets:fonts first.');
+}
+const weights = spawnSync(
+  'python3',
+  [path.join(import.meta.dirname, 'font-weights.py'), out, cjk, hangul],
+  {
+    encoding: 'utf8',
+  },
+);
+if (weights.error || weights.status !== 0) {
+  throw new Error('Font weights need Python/fontTools. Run pnpm assets inside nix develop.', {
+    cause: weights.error ?? new Error(weights.stderr),
+  });
+}
+await fs.copyFile(path.join(source, 'fonts/ofl.txt'), path.join(out, 'font-license.txt'));
+await fs.copyFile(path.join(source, 'fonts/noto-ofl.txt'), path.join(out, 'font-cjk-license.txt'));
+
+for (const file of await fs.readdir(path.join(source, 'wallpapers'))) {
+  if (!/\.(jpg|svg)$/.test(file)) continue;
+  const id = path.parse(file).name;
+  const input = path.join(source, 'wallpapers', file);
+  for (const scale of highResolution ? [1, 2] : [1]) {
+    const width = 1920 * scale;
+    const height = 1080 * scale;
+    // Match background-size:cover and each CSS background-position exactly.
+    const photo = await sharp(input, { density: 72 * scale })
+      .resize(width, height, { fit: 'outside' })
+      .png()
+      .toBuffer({ resolveWithObject: true });
+    const position = id === 'dunes' || id === 'summit' ? 0.4 : id === 'san-francisco' ? 0.42 : 0.45;
+    let image = sharp(photo.data).extract({
+      left: Math.round((photo.info.width - width) / 2),
+      top: Math.round((photo.info.height - height) * position),
+      width,
+      height,
+    });
+    const saturation =
+      id === 'san-francisco'
+        ? 0.75
+        : id === 'summit'
+          ? 0.7
+          : ['forest', 'yosemite', 'northern-lights'].includes(id)
+            ? 0.8
+            : 1;
+    const brightness = id === 'san-francisco' ? 0.82 : id === 'summit' ? 0.8 : 1;
+    if (saturation !== 1) {
+      const s = saturation;
+      image = image.recomb([
+        [0.213 + 0.787 * s, 0.715 - 0.715 * s, 0.072 - 0.072 * s],
+        [0.213 - 0.213 * s, 0.715 + 0.285 * s, 0.072 - 0.072 * s],
+        [0.213 - 0.213 * s, 0.715 - 0.715 * s, 0.072 + 0.928 * s],
+      ]);
+    }
+    const data = await image.linear(brightness).png().toBuffer();
+    await sharp(data)
+      .jpeg({ quality: 96 })
+      .toFile(path.join(out, 'wallpapers', `${id}-plain${scale === 2 ? '@2x' : ''}.jpg`));
+    const shaded = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 1920 1080"><defs>
+    <linearGradient id="v" x2="0" y2="1"><stop stop-color="#0d1013" stop-opacity=".24"/><stop offset=".19" stop-color="#0e1115" stop-opacity=".08"/><stop offset=".35" stop-color="#0f1114" stop-opacity=".35"/><stop offset=".63" stop-color="#111317" stop-opacity=".86"/><stop offset=".85" stop-color="#17191d" stop-opacity=".92157"/><stop offset="1" stop-color="#17191d" stop-opacity=".96078"/></linearGradient>
+    <linearGradient id="h"><stop stop-color="#111417" stop-opacity=".42"/><stop offset=".75" stop-color="#111417" stop-opacity="0"/></linearGradient></defs>
+    <path fill="#17191c" d="M0 0h1920v1080H0z"/><image href="data:image/png;base64,${data.toString('base64')}" width="1920" height="1080" opacity=".92"/><path fill="url(#h)" d="M0 0h1920v1080H0z"/><path fill="url(#v)" d="M0 0h1920v1080H0z"/></svg>`;
+    // This generated SVG embeds a trusted bundled photograph; its data URL can
+    // exceed libxml's default 10 MiB attribute limit at 4K.
+    await sharp(Buffer.from(shaded), { unlimited: true })
+      .jpeg({ quality: 96 })
+      .toFile(path.join(out, 'wallpapers', `${id}${scale === 2 ? '@2x' : ''}.jpg`));
+  }
+  await sharp(input)
+    .resize(480, 270, { fit: 'cover' })
+    .jpeg({ quality: 82 })
+    .toFile(path.join(out, 'thumbnails', `${id}.jpg`));
+}
+// webOS shows `splashBackground` (a static image, scaled to 1080p) until the window opens. One
+// 1080p PNG per background lets the package start on the user's wallpaper instead of a grey card.
+for (const file of await fs.readdir(path.join(out, 'wallpapers'))) {
+  if (!file.endsWith('.jpg') || file.includes('@2x') || file.includes('-plain')) continue;
+  await sharp(path.join(out, 'wallpapers', file))
+    .resize(1920, 1080, { fit: 'cover' })
+    .png({ compressionLevel: 9 })
+    .toFile(path.join(out, 'splash', file.replace(/\.jpg$/, '.png')));
+}
+await fs.writeFile(
+  path.join(out, 'version.txt'),
+  JSON.parse(await fs.readFile(path.join(root, 'appinfo.json'), 'utf8')).version,
+);
+
+const surfaces = {
+  generic: ['#4e5c6b', '#243c4e'],
+  custom: ['#2f5a63', '#16323a'],
+  'live-tv': ['#192a43', '#0d1628'],
+  netflix: ['#141414', '#141414'],
+  youtube: ['#0f0f0f', '#0f0f0f'],
+  'apple-tv': ['#252525', '#080808'],
+  'disney-plus': ['#0b244c', '#091936'],
+  'prime-video': ['#0786bd', '#005ba7'],
+  arte: ['#242323', '#121212'],
+  zdf: ['#121b22', '#121b22'],
+  'das-erste': ['#064c84', '#00254e'],
+  plex: ['#343434', '#232323'],
+  spotify: ['#000000', '#121212'],
+  jellyfin: ['#25283f', '#101422'],
+  homebrew: ['#7c6042', '#3f392d'],
+  kodi: ['#0a749b', '#08445e'],
+  moonlight: ['#435d8f', '#252e59'],
+  gaming: ['#435d8f', '#252e59'],
+  browser: ['#192a43', '#0d1628'],
+  'hbo-max': ['#181818', '#080808'],
+  'paramount-plus': ['#075bda', '#00298e'],
+  peacock: ['#171717', '#080808'],
+  hulu: ['#152d23', '#091710'],
+  crunchyroll: ['#141414', '#141414'],
+  twitch: ['#6330b8', '#32165c'],
+  dazn: ['#252623', '#10110e'],
+  'rakuten-tv': ['#bf143a', '#620c20'],
+  'apple-music': ['#252525', '#080808'],
+  'amazon-music': ['#183c4a', '#102128'],
+  'bbc-iplayer': ['#4a162e', '#230b16'],
+  itvx: ['#24341b', '#111a0c'],
+  'channel-4': ['#20362c', '#0c1a14'],
+  'now-tv': ['#064c45', '#001e1a'],
+  'rtl-plus': ['#262029', '#121014'],
+  joyn: ['#000000', '#000000'],
+  'waipu-tv': ['#154e8e', '#0a2544'],
+  zattoo: ['#353031', '#151314'],
+  skyshowtime: ['#24202e', '#100d17'],
+  'coupang-play': ['#143b4a', '#091d25'],
+  tving: ['#3f131d', '#1a090e'],
+  wavve: ['#10399e', '#0a1e53'],
+  watcha: ['#3d1225', '#1e0912'],
+  'movistar-plus': ['#163b35', '#091e1a'],
+  filmin: ['#10372f', '#091c18'],
+  'nrk-tv': ['#073b84', '#04214b'],
+  'tv2-play': ['#1d1530', '#0b0812'],
+};
+for (const [brand, [top, bottom]] of Object.entries(surfaces)) {
+  const fill =
+    brand === 'disney-plus'
+      ? '<radialGradient id="base" cx="50%" cy="110%" r="110%"><stop stop-color="#16466b"/><stop offset=".6" stop-color="#0b244c"/><stop offset="1" stop-color="#091936"/></radialGradient>'
+      : `<linearGradient id="base" x2="1" y2="1"><stop stop-color="${top}"/><stop offset="1" stop-color="${bottom}"/></linearGradient>`;
+  await sharp(
+    Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="540" height="309"><defs>${fill}<linearGradient id="sheen" x2="1" y2="1"><stop stop-color="white" stop-opacity=".04"/><stop offset=".48" stop-color="white" stop-opacity="0"/></linearGradient></defs><path fill="url(#base)" d="M0 0h540v309H0z"/><path fill="url(#sheen)" d="M0 0h540v309H0z"/></svg>`,
+    ),
+  )
+    .png()
+    .toFile(path.join(out, 'surfaces', `${brand}.png`));
+}
+await generateVectorAssets();
+await sharp(path.join(source, 'app-icon.svg'))
+  .resize(80, 80)
+  .png()
+  .toFile(path.join(out, 'app-icon.png'));
+await sharp(path.join(source, 'app-icon.svg'))
+  .resize(130, 130)
+  .png()
+  .toFile(path.join(out, 'app-icon-large.png'));
+console.log(`Native artwork ready: ${path.relative(root, out)}`);

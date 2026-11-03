@@ -1,0 +1,3 @@
+/media/cryptofs/apps/usr/palm/applications/com.luma.launcher
+/media/developer/apps/usr/palm/applications/com.luma.launcher
+/usr/palm/applications/com.luma.launcher

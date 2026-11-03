@@ -11,7 +11,7 @@ const manifest = JSON.parse(await fs.readFile(path.join(root, 'appinfo.json'), '
 for (const [tool, args] of [
   [
     'ares-install',
-    ['--device', device, path.join(root, 'dist', `${manifest.id}_${manifest.version}_all.ipk`)],
+    ['--device', device, path.join(root, 'dist', `${manifest.id}_${manifest.version}_arm.ipk`)],
   ],
   ['ares-launch', ['--device', device, manifest.id]],
 ]) {

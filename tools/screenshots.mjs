@@ -1,32 +1,63 @@
+// Capture documentation from the actual native desktop renderer, not a browser.
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { chromium } from '@playwright/test';
+import { spawnSync } from 'node:child_process';
 
 const root = path.resolve(import.meta.dirname, '..');
-const directory = path.join(root, 'docs');
-await fs.mkdir(directory, { recursive: true });
-const browser = await chromium.launch();
+const docs = path.join(root, 'docs');
+const scratch = path.join(root, '.build');
+await fs.mkdir(docs, { recursive: true });
+await fs.mkdir(scratch, { recursive: true });
+
+function run(command, args) {
+  const result = spawnSync(command, args, { cwd: root, stdio: 'inherit', timeout: 120000 });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`${command} exited with status ${result.status}`);
+}
+
+// Force the desktop feature set even after a previous all-features lint/build.
+run('cargo', ['build', '--locked', '--package', 'luma', '--no-default-features']);
+const binary = path.resolve(root, process.env.CARGO_TARGET_DIR ?? 'target', 'debug/luma');
+const temporary = await fs.mkdtemp(path.join(scratch, 'documentation-'));
+const preferences = path.join(temporary, 'preferences.json');
+const configuration = {
+  language: 'en',
+  background: 'dunes',
+  hour_24: false,
+  show_home_names: false,
+  show_weather: true,
+  weather_location: null,
+  hidden: [],
+  input_modes: {},
+  reduced_motion: false,
+};
 try {
-  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
-  await page.clock.setFixedTime(new Date('2026-10-19T20:41:00'));
-  await page.goto(pathToFileURL(path.join(root, 'dist/app/index.html')).href);
-  await page.getByRole('button', { name: 'Open Netflix', exact: true }).waitFor();
-  await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(500);
-  await page.screenshot({ path: path.join(directory, 'home.png') });
-  for (const [name, action] of [
-    ['apps', () => page.getByRole('button', { name: 'Apps', exact: true }).click()],
-    ['inputs', () => page.getByRole('button', { name: 'Inputs', exact: true }).click()],
-    ['settings', () => page.getByRole('button', { name: 'Settings', exact: true }).click()],
+  for (const [name, script] of [
+    ['home', 'home,down'],
+    ['apps', 'apps,down'],
+    ['settings', 'settings,down'],
+    ['inputs', 'settings,down,down,down,enter,down,down,down,enter'],
   ]) {
-    await action();
-    await page.mouse.move(1, 1);
-    if (name === 'inputs') await page.locator('.input-card').first().focus();
-    await page.waitForTimeout(500);
-    await page.screenshot({ path: path.join(directory, `${name}.png`) });
+    // Independent state makes screenshots stable regardless of capture order.
+    await fs.writeFile(preferences, JSON.stringify(configuration));
+    run(binary, [
+      '--assets',
+      path.join(scratch, 'assets'),
+      '--preferences',
+      preferences,
+      '--time',
+      '2026-10-22T20:41:00+02:00',
+      '--script',
+      script,
+      '--frames',
+      '90',
+      '--capture-scale',
+      '1',
+      '--screenshot',
+      path.join(docs, `${name}.png`),
+    ]);
+    console.log(`Native screenshot: docs/${name}.png (1920×1080)`);
   }
-  console.log('Saved desktop-preview screenshots to docs/.');
 } finally {
-  await browser.close();
+  await fs.rm(temporary, { recursive: true, force: true });
 }
