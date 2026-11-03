@@ -1945,6 +1945,12 @@ impl State {
             // The TV keyboard starts empty, so a new name replaces the old one.
             self.input_name.clear();
         }
+        // Fire TV's keyboard also starts empty and can't delete text it didn't type.
+        if cfg!(target_os = "android")
+            && let Some(draft) = self.agents_draft(field)
+        {
+            draft.clear();
+        }
         // Fire TV's own keyboard has the remote's voice input and every character an address
         // needs; Luma's on-screen keys don't.
         if cfg!(any(
