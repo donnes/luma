@@ -15,17 +15,19 @@
     "build": "sh tools/build-webos.sh",
     "package": "pnpm assets && pnpm build && node tools/package.mjs && node tools/repository.mjs",
     "deploy": "pnpm run package && node tools/deploy.mjs",
-    "test": "pnpm test:release && pnpm test:home && pnpm test:icons && pnpm test:wallpapers && pnpm test:tiles && cargo test --locked --workspace --all-features",
+    "test": "pnpm test:release && pnpm test:home && pnpm test:icons && pnpm test:wallpapers && pnpm test:tiles && pnpm test:voice && cargo test --locked --workspace --all-features",
     "test:release": "node --test tests/release.test.mjs",
     "test:home": "node --test tests/self-update.test.mjs tests/home-wrapper.test.mjs && cargo test --locked -p luma-tv-helper",
     "test:icons": "node --test tests/brand-assets.test.mjs",
     "test:wallpapers": "node --test tests/wallpaper-upload.test.mjs",
     "test:tiles": "node --test tests/tile-editor.test.mjs",
+    "test:voice": "node --import tsx --test packages/voice/tests/*.test.ts",
     "test:smoke": "node tests/smoke.mjs && node tests/brands-smoke.mjs && node tests/weather-smoke.mjs && node tests/translations-smoke.mjs",
     "test:brands": "node tests/brands-smoke.mjs",
-    "check": "pnpm version:check && pnpm lint && cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
+    "check": "pnpm version:check && pnpm lint && pnpm typecheck && cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
     "lint": "oxlint --deny-warnings .",
     "lint:fix": "oxlint --fix --deny-warnings .",
+    "typecheck": "tsc -p packages/voice --noEmit",
     "format": "cargo fmt --all && oxfmt --write .",
     "format:check": "cargo fmt --all -- --check && oxfmt --check .",
     "assets": "node tools/assets.mjs",
@@ -40,13 +42,19 @@
     "changeset": "changeset",
     "version:release": "changeset version && pnpm version:sync && oxfmt --write CHANGELOG.md",
     "version:sync": "node tools/sync-version.mjs",
-    "version:check": "node tools/sync-version.mjs --check"
+    "version:check": "node tools/sync-version.mjs --check",
+    "voice": "node --import tsx packages/voice/src/main.ts"
   },
   "devDependencies": {
     "@changesets/cli": "3.0.3",
+    "@types/node": "^24.10.0",
+    "@types/ws": "^8.18.2",
     "@webos-tools/cli": "3.2.6",
     "oxfmt": "0.73.0",
     "oxlint": "1.88.0",
-    "sharp": "0.35.5"
+    "sharp": "0.35.5",
+    "tsx": "^4.20.6",
+    "typescript": "~5.9.3",
+    "ws": "^8.22.0"
   }
 }

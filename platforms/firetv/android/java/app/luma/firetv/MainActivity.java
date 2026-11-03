@@ -2,12 +2,16 @@ package app.luma.firetv;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.ConsoleMessage;
@@ -21,8 +25,12 @@ import android.widget.FrameLayout;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 /**
  * Android TV / Fire TV shell: hosts the bundled Luma app ({@code dist/app} lives
@@ -41,12 +49,15 @@ public class MainActivity extends Activity {
    * request mapping and zero dependencies.
    */
   private static final String HOST = "luma.local";
-  private static final String BASE_URL = "https://" + HOST + "/";
+  static final String BASE_URL = "https://" + HOST + "/";
   private static final String ASSET_ROOT = "app/";
   /** Installed apps' banners and icons, drawn by the shell on request. */
   private static final String ART_PREFIX = "/app-art/";
   private static final String TAG = "luma";
-  /** Sent by {@link WebAppActivity} when T3 Code's web app needs a new pairing code. */
+  /**
+   * Sent by {@link WebAppActivity} when T3 Code's web app needs a new pairing
+   * code, with the URL it was headed to as {@link WebAppActivity#EXTRA_URL}.
+   */
   static final String ACTION_REPAIR_WEB_APP = "app.luma.firetv.REPAIR_WEB_APP";
 
   /** Long enough for the resumed window's first frame to reach the screen. */
@@ -55,6 +66,33 @@ public class MainActivity extends Activity {
   private WebView webView;
   private final Shell shell = new Shell(this);
   private final Runnable reportShown = () -> HomeGuard.report(this, true);
+  /**
+   * HomeGuard asking whether Luma is in front, and its agent alerts while Luma
+   * is, for the page's own toast, then the requests that ended. HomeGuard
+   * counts an alert as shown once it's sent, so the events that come while
+   * the page is still starting, as after the system killed Luma, wait here in
+   * order until the page listens for them. So does a web app repair that
+   * starts this activity.
+   */
+  private final BroadcastReceiver fromHomeGuard =
+      new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+          String action = intent.getAction();
+          if (HomeGuard.ACTION_REPORT_LUMA.equals(action)) {
+            HomeGuard.report(MainActivity.this, resumed);
+          } else if (HomeGuard.ACTION_AGENT_ALERT.equals(action)) {
+            String alert = intent.getStringExtra(HomeGuard.EXTRA_ALERT);
+            if (alert != null) toPage("luma:agent-alert", alert);
+          } else if (HomeGuard.ACTION_AGENTS_ENDED.equals(action)) {
+            List<String> ended = intent.getStringArrayListExtra(HomeGuard.EXTRA_REQUESTS);
+            if (ended != null) toPage("luma:agent-alerts-ended", new JSONArray(ended).toString());
+          }
+        }
+      };
+  private final ArrayList<String> heldEvents = new ArrayList<>();
+  private boolean pageListening;
+  private boolean resumed;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -71,18 +109,45 @@ public class MainActivity extends Activity {
     setContentView(layout);
 
     webView.loadUrl(BASE_URL + "index.html");
+    IntentFilter events = new IntentFilter(HomeGuard.ACTION_REPORT_LUMA);
+    events.addAction(HomeGuard.ACTION_AGENT_ALERT);
+    events.addAction(HomeGuard.ACTION_AGENTS_ENDED);
+    registerReceiver(fromHomeGuard, events, HomeGuard.PERMISSION, null);
+    // A restored activity would repeat the repair it was started for.
+    if (savedInstanceState == null) repairWebApp(getIntent());
+  }
+
+  /** From the page, through {@link Shell#listenForAgentAlerts}. */
+  void onPageListening() {
+    pageListening = true;
+    for (String event : heldEvents) webView.evaluateJavascript(event, null);
+    heldEvents.clear();
+  }
+
+  /** Dispatches an event with JSON {@code detail}, the bridge's AGENT_ALERT_EVENT and the like. */
+  private void toPage(String name, String detail) {
+    String event =
+        "window.dispatchEvent(new CustomEvent('" + name + "',{detail:" + detail + "}))";
+    if (pageListening) webView.evaluateJavascript(event, null);
+    else heldEvents.add(event);
   }
 
   @Override
   protected void onNewIntent(Intent intent) {
     super.onNewIntent(intent);
+    repairWebApp(intent);
+  }
+
+  private void repairWebApp(Intent intent) {
     if (ACTION_REPAIR_WEB_APP.equals(intent.getAction())) {
-      webView.evaluateJavascript("window.dispatchEvent(new Event('luma:t3-repair'))", null);
+      String url = intent.getStringExtra(WebAppActivity.EXTRA_URL);
+      toPage("luma:t3-repair", JSONObject.quote(url == null ? "" : url));
     }
   }
 
   @Override
   protected void onPause() {
+    resumed = false;
     webView.removeCallbacks(reportShown);
     HomeGuard.report(this, false);
     webView.onPause();
@@ -92,6 +157,7 @@ public class MainActivity extends Activity {
   @Override
   protected void onResume() {
     super.onResume();
+    resumed = true;
     webView.onResume();
     enterImmersive(this);
     // HomeGuard may be covering Amazon's home; let it drop the cover once the
@@ -101,6 +167,7 @@ public class MainActivity extends Activity {
 
   @Override
   protected void onDestroy() {
+    unregisterReceiver(fromHomeGuard);
     if (webView != null) {
       webView.destroy();
     }
@@ -123,6 +190,26 @@ public class MainActivity extends Activity {
         "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',"
             + "keyCode:27,which:27,bubbles:true,cancelable:true}))";
     webView.evaluateJavascript(escape, null);
+  }
+
+  /**
+   * The WebView keeps Menu from the page, as it does Back, so the shell hands
+   * the focused element the keydown a browser would send; Luma opens its
+   * inbox on it.
+   */
+  @Override
+  public boolean dispatchKeyEvent(KeyEvent event) {
+    if (event.getKeyCode() != KeyEvent.KEYCODE_MENU || webView == null) {
+      return super.dispatchKeyEvent(event);
+    }
+    if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+      webView.evaluateJavascript(
+          "(document.activeElement||document).dispatchEvent(new KeyboardEvent('keydown',"
+              + "{key:'ContextMenu',code:'ContextMenu',keyCode:93,which:93,bubbles:true,"
+              + "cancelable:true}))",
+          null);
+    }
+    return true;
   }
 
   static void enterImmersive(Activity activity) {
@@ -183,31 +270,44 @@ public class MainActivity extends Activity {
     return view;
   }
 
-  /** Maps {@code luma.local/**} onto {@code assets/app/**}; 404s are empty. */
+  /** Maps {@code luma.local/**} onto {@code assets/app/**}, and serves app art. */
   private final class AssetWebViewClient extends WebViewClient {
     @Override
     public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
       Uri url = request.getUrl();
-      if (!HOST.equals(url.getHost()) || !"https".equals(url.getScheme())) {
-        return null;
-      }
       String path = url.getPath();
-      if (path != null && path.startsWith(ART_PREFIX) && path.endsWith(".png")) {
+      if (isLuma(url) && path != null && path.startsWith(ART_PREFIX) && path.endsWith(".png")) {
         byte[] png = shell.art(path.substring(ART_PREFIX.length(), path.length() - 4));
         return png == null
             ? notFound()
             : new WebResourceResponse("image/png", null, new ByteArrayInputStream(png));
       }
-      String relative =
-          path == null || path.isEmpty() || "/".equals(path) ? "index.html" : path.substring(1);
-      String asset = ASSET_ROOT + relative;
-      try {
-        InputStream data = getAssets().open(asset);
-        String mime = mimeFor(asset);
-        return new WebResourceResponse(mime, isText(mime) ? "utf-8" : null, data);
-      } catch (IOException missing) {
-        return notFound();
-      }
+      return asset(MainActivity.this, url);
+    }
+  }
+
+  private static boolean isLuma(Uri url) {
+    return HOST.equals(url.getHost()) && "https".equals(url.getScheme());
+  }
+
+  /**
+   * The bundled file for a {@code luma.local} URL, empty 404s included; null
+   * for other origins, which go to the network. Also serves {@link InboxActivity}.
+   */
+  static WebResourceResponse asset(Context context, Uri url) {
+    if (!isLuma(url)) {
+      return null;
+    }
+    String path = url.getPath();
+    String relative =
+        path == null || path.isEmpty() || "/".equals(path) ? "index.html" : path.substring(1);
+    String asset = ASSET_ROOT + relative;
+    try {
+      InputStream data = context.getAssets().open(asset);
+      String mime = mimeFor(asset);
+      return new WebResourceResponse(mime, isText(mime) ? "utf-8" : null, data);
+    } catch (IOException missing) {
+      return notFound();
     }
   }
 

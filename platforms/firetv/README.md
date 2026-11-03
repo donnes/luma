@@ -12,6 +12,19 @@ a synchronous JSON call:
 - `listApps(): string` — JSON `{ "apps": [{ "id": string, "title": string }] }`
 - `launchApp(appId: string): string` — JSON `{ "error"?: string }`
 - `exit(): void`
+- `canAlertOverApps(): boolean` — whether HomeGuard is on (see below)
+- `watchAgents(config: string): void` — hands HomeGuard the T3 Code pairing
+  and the alert's words as JSON; an empty string once unpaired. The shell
+  saves it even while HomeGuard is off
+- `listenForAgentAlerts(): void` — the page now listens for HomeGuard's
+  alerts (`luma:agent-alert`) and the requests that ended since
+  (`luma:agent-alerts-ended`); the shell holds them back until it does
+- `agentAlertHistory(): string` and `saveAgentAlertHistory(json: string): void`
+  — the ids of the requests already alerted about, as a JSON array (`null`
+  before any), shared with HomeGuard
+
+The inbox window over other apps (see below) loads the same bundle with
+`#inbox`, and its `window.LumaAndroid` has `openWebApp(url, then)` alone.
 
 The shell (`platforms/firetv/android/`) injects the object with
 `addJavascriptInterface` and implements it as `app.luma.firetv.Shell`. App ids
@@ -27,7 +40,8 @@ through PackageManager. No permissions beyond internet are needed.
   (`file://` cannot load subresources securely or keep CSP/localStorage
   semantics). Any other origin — the weather API — goes to the network.
 - The Back key dispatches an `Escape` keydown into the app, which owns panel
-  and page back-stacks. When the app has nothing to close,
+  and page back-stacks. The WebView keeps Menu from the page too, so the shell
+  dispatches a `ContextMenu` keydown for it, which opens Luma's inbox. When the app has nothing to close,
   `platformBack()` reaches `exit()` and the shell calls `moveTaskToBack`
   instead of finishing: relaunching Luma is instant and the task survives.
 - D-pad navigation and OK work as arrow/Enter key events, like a browser.
@@ -81,7 +95,8 @@ console output, and `adb shell monkey -p com.luma.launcher 1` to launch.
 Fire OS won't accept a replacement home screen: Home always opens Amazon's
 launcher, and most apps exit to it. The APK includes an accessibility service,
 `app.luma.firetv.HomeGuard`, that watches window changes of
-`com.amazon.tv.launcher` and brings Luma back whenever it appears. It also
+`com.amazon.tv.launcher` and brings Luma back whenever its home screen
+appears. Other launcher screens, such as voice search results, stay. It also
 opens Luma after a reboot, because enabled services start with the system.
 It runs in its own `:guard` process so the low-memory killer can take the
 WebView without taking the service along.
@@ -112,6 +127,88 @@ service clicks its tile and Amazon's launcher opens Luma itself.
 - While the service is on, Back on Luma's home screen stays in Luma instead
   of parking the task. Fire TV Settings is a separate app and still opens
   from the Home long-press menu.
+
+## Agent alerts
+
+When a T3 Code agent newly needs you, a toast shows in the top-right corner
+for six seconds: inside Luma when it's in front, and over any other app
+otherwise, video included. HomeGuard draws the latter in an accessibility
+overlay window that takes no focus, keys or touches, so the app underneath
+keeps the remote and keeps playing.
+
+Luma's page can't watch agents from behind another app: Chromium throttles a
+hidden page's timers to once a minute and freezes it after a few minutes,
+and the low-memory killer takes the WebView process (about 105 MB with its
+renderer) as soon as it drops to a cached app. So HomeGuard keeps its own
+small connection (`AgentWatch`: a WebSocket client for the shell stream
+only, about 10 MB more in `:guard`), with the pairing the page hands over. It
+alerts once per request, and remembers which across restarts for as long as
+the request is pending. Several alerts at once show one after another, and an
+alert whose request ends first, say because it was answered elsewhere, is
+dropped. While Luma is in front, it passes the alert to the page, which shows
+the same toast unless the agents page already shows that agent, and it tells
+the page which requests ended so their queued toasts go too. When HomeGuard
+starts, it asks MainActivity whether Luma is already in front.
+
+While HomeGuard is on, it alone decides what's new; while it's off, the page
+does, as on webOS and Tizen. Both keep the same history of alerted requests
+(`files/agent-alerts-seen.json`), so turning HomeGuard on or off doesn't
+announce a request again that the other one already did.
+
+Force-stopping Luma also turns HomeGuard off (Android removes it from the
+enabled services); enable it again with the commands above.
+
+## Agents inbox over other apps
+
+Menu (≡) opens Luma's agents inbox on top of whatever app is in front,
+including T3 Code's web app. HomeGuard filters key events for this: it
+consumes Menu when Luma's own page isn't in front and lets every other key
+through untouched. In Luma, Menu goes through to the page, which opens the
+same inbox itself. HomeGuard counts the page as in front when MainActivity
+last reported it shown and the process that sent that report is still
+alive, so a Luma that died in front doesn't keep Menu from the inbox.
+
+The inbox is `InboxActivity`, a translucent activity in its own task in
+Luma's main process. Its WebView loads Luma's bundle with `#inbox`, which
+draws only the inbox panel over a transparent page, and shares the pairing
+with MainActivity through localStorage. Back or Menu closes it and the app
+underneath is in front again. OK on a thread opens it in T3 Code's web app,
+in Luma's task, where an open T3 Code takes the thread; Back from there
+returns to Luma, not to the app the inbox opened over. If T3 Code's session
+has expired, the web app hands the thread's URL to MainActivity, whose page
+pairs again and reopens that thread, starting first if it wasn't running.
+
+The activity finishes as soon as anything else comes to the front, so no
+second Luma WebView stays alive on a 1 GB stick. If the system took Luma's
+main process, the inbox starts it again, which takes 1–2 seconds, and the
+list fills in once the connection to T3 Code is up. Some apps pause their
+video while the inbox is on top.
+
+`adb shell input keyevent` injects keys after the accessibility key filter,
+so it can't test this. Send the remote's own input events instead, for
+example Menu on the stick Luma is tested on (AFTSS, where `amzkeyboard` is `/dev/input/event4`
+there; `adb shell getevent -pl` lists the devices):
+
+```sh
+adb shell 'sendevent /dev/input/event4 1 139 1; sendevent /dev/input/event4 0 0 0;
+  sendevent /dev/input/event4 1 139 0; sendevent /dev/input/event4 0 0 0'
+```
+
+### After updating from a build without the Menu filter
+
+Android keeps an enabled service's old capabilities across `adb install -r`.
+HomeGuard stays on but can't filter keys, so Menu over other apps does
+nothing. `adb shell dumpsys accessibility` then shows `capabilities=1`
+instead of `9`. Turn HomeGuard off and on again once:
+
+```sh
+adb shell settings put secure enabled_accessibility_services '""'
+adb shell settings put secure enabled_accessibility_services \
+  com.luma.launcher/app.luma.firetv.HomeGuard
+adb shell settings put secure accessibility_enabled 1
+```
+
+Later updates keep the new capabilities.
 
 ## TODO
 

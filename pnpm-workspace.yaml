@@ -1,4 +1,5 @@
 onlyBuiltDependencies:
+  - esbuild
   - sharp
 
 # webOS CLI's postinstall only changes bundled config permissions. SSH's optional

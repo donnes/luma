@@ -2,6 +2,7 @@ package app.luma.firetv;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
@@ -19,6 +20,9 @@ import android.webkit.WebViewClient;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.Locale;
 import org.json.JSONObject;
 
 /**
@@ -37,10 +41,38 @@ public class WebAppActivity extends Activity {
   private WebView webView;
   private String injection;
   private String then;
+  /** Where this page is headed, the deep link or the page itself, for Luma to reopen after a repair. */
+  private String target;
   /** Opened with a pairing code: a pair page with no code is T3 Code mid hand-off, not a lost session. */
   private boolean handoff;
   /** The deep link is loading; forget the pairing pages before it. */
   private boolean forgetHistory;
+  /**
+   * The T3 server Luma verified before minting the pairing code. The page stays
+   * on it: a redirect elsewhere would carry the code in the URL fragment.
+   */
+  private String origin;
+
+  /**
+   * Opens {@code url}, then {@code then} when not empty, once the page has
+   * left /pair; null, logged, for anything but http(s).
+   */
+  static Intent intent(Context context, String url, String then) {
+    boolean hasThen = then != null && !then.isEmpty();
+    if (!isWeb(url) || (hasThen && !isWeb(then))) {
+      Log.w(TAG, "Refusing to open " + url);
+      return null;
+    }
+    Intent intent = new Intent(context, WebAppActivity.class);
+    intent.putExtra(EXTRA_URL, url);
+    if (hasThen) intent.putExtra(EXTRA_THEN, then);
+    return intent;
+  }
+
+  private static boolean isWeb(String url) {
+    String scheme = url == null ? null : Uri.parse(url).getScheme();
+    return "http".equals(scheme) || "https".equals(scheme);
+  }
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -66,6 +98,8 @@ public class WebAppActivity extends Activity {
   private void load(Intent intent) {
     String url = intent.getStringExtra(EXTRA_URL);
     then = intent.getStringExtra(EXTRA_THEN);
+    origin = origin(url);
+    target = then != null ? then : url;
     handoff = "/pair".equals(Uri.parse(url).getPath());
     webView.loadUrl(url);
   }
@@ -99,6 +133,26 @@ public class WebAppActivity extends Activity {
         });
   }
 
+  /**
+   * scheme://host:port, or "" for anything that isn't http(s) or doesn't parse.
+   * java.net.URI, because Android 9's Uri cuts IPv6 hosts at the first colon,
+   * which would make different Tailscale addresses look like one origin.
+   */
+  private static String origin(String url) {
+    try {
+      URI uri = new URI(url);
+      String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+      int port = uri.getPort();
+      if ("http".equals(scheme)) port = port == -1 ? 80 : port;
+      else if ("https".equals(scheme)) port = port == -1 ? 443 : port;
+      else return "";
+      if (uri.getHost() == null) return "";
+      return scheme + "://" + uri.getHost().toLowerCase(Locale.ROOT) + ":" + port;
+    } catch (URISyntaxException e) {
+      return "";
+    }
+  }
+
   @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
   private WebView createWebView() {
     WebView view = new WebView(this);
@@ -120,9 +174,11 @@ public class WebAppActivity extends Activity {
         new WebViewClient() {
           @Override
           public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-            String scheme = request.getUrl().getScheme();
-            // Downloads, mailto: and other apps' links have nowhere to go on the TV.
-            return !"http".equals(scheme) && !"https".equals(scheme);
+            // Also called for server redirects. Downloads, mailto: and other
+            // apps' links have nowhere to go on the TV, and other sites
+            // mustn't load with the pairing code or the TV adjustments.
+            String destination = origin(request.getUrl().toString());
+            return destination.isEmpty() || request.isForMainFrame() && !destination.equals(origin);
           }
 
           // Both hooks run the (idempotent) injection: the first as soon as the
@@ -161,7 +217,11 @@ public class WebAppActivity extends Activity {
   }
 
   private final class Page {
-    /** The server wants a pairing code: close and let Luma's form collect one. */
+    /**
+     * The server wants a pairing code: close and let Luma's page pair again and
+     * reopen the target. That page may not be the one that opened this, as
+     * with the inbox over other apps, so the target goes along.
+     */
     @JavascriptInterface
     public void repair() {
       runOnUiThread(
@@ -169,6 +229,7 @@ public class WebAppActivity extends Activity {
             if (handoff) return;
             Intent luma = new Intent(WebAppActivity.this, MainActivity.class);
             luma.setAction(MainActivity.ACTION_REPAIR_WEB_APP);
+            luma.putExtra(EXTRA_URL, target);
             startActivity(luma);
             finish();
           });

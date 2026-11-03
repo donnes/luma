@@ -1,0 +1,22 @@
+# Optional systemd user unit for Luma voice. Not installed by anything.
+#
+# Edit the two marked lines, then:
+#   cp packages/voice/luma-voice.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now luma-voice
+#   journalctl --user -u luma-voice -f
+
+[Unit]
+Description=Luma voice service
+After=network-online.target
+
+[Service]
+# Your Luma checkout.
+WorkingDirectory=%h/luma
+# The directory that holds pnpm and node: `dirname "$(command -v pnpm)"`.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
+ExecStart=/usr/bin/env pnpm voice
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
