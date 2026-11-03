@@ -80,6 +80,8 @@ Until it's paired, the app opens to its pairing screen:
 1. In T3 Code, open **Settings → Connections** and create a pairing link. The T3 Code server must listen on your network, not only on `127.0.0.1`, and your firewall must allow its port (3773 by default) from the TV.
 2. In Luma's T3 Code app, enter the server's address (for example `192.168.1.10:3773`) and the 12-character code, or the whole pairing link. Codes work once and expire after 5 minutes.
 
+When an agent newly asks a question or waits for an approval, a toast shows in Luma's top-right corner. On Fire TV it also shows over other apps; see [platforms/firetv/README.md](platforms/firetv/README.md#agent-alerts).
+
 Pairing creates a 30-day session named "Luma TV" and pins the app to Home. Luma learns every address the server reports, then connects over the LAN when it's reachable and over Tailscale when it isn't. Select the connection label in the app to see the addresses or **Unpair**; revoke the session in T3 Code's Connections settings to end it there too. Replies use the TV keyboard, including its microphone where the remote has one.
 
 ## Troubleshooting

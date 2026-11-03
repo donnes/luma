@@ -11,6 +11,11 @@ interface LumaShell {
   launchApp(appId: string): string;
   exit(): void;
   openWebApp?(url: string, then: string): void;
+  canAlertOverApps?(): boolean;
+  watchAgents?(config: string): void;
+  listenForAgentAlerts?(): void;
+  agentAlertHistory?(): string;
+  saveAgentAlertHistory?(json: string): void;
 }
 
 const shell = (): LumaShell | undefined =>
@@ -71,4 +76,58 @@ export const canOpenWebApp = (): boolean => typeof shell()?.openWebApp === 'func
 /** `then` loads once the first page has left /pair, so pairing can land on a deep link. */
 export function openWebApp(url: string, then = ''): void {
   shell()?.openWebApp?.(url, then);
+}
+
+// Fire TV: with HomeGuard enabled, the shell keeps its own connection to the
+// paired T3 Code server, since the low-memory killer soon takes this page
+// once another app is in front. It then decides alone what newly needs you:
+// it alerts over that app and, while Luma is in front, sends the alert here
+// as an event, followed by the requests that ended since.
+export const canAlertOverApps = (): boolean => shell()?.canAlertOverApps?.() === true;
+
+export interface AgentWatch {
+  /** The paired server; a route answering as another one is skipped. */
+  environmentId: string;
+  /** Server origins, best first. */
+  routes: string[];
+  token: string;
+  /** The server's name, shown top right. */
+  source: string;
+  /** Headlines, in the user's language: "Needs you · asked a question". */
+  asked: string;
+  approval: string;
+}
+
+/**
+ * Hands the shell the pairing to watch agents with; null once unpaired. The
+ * shell keeps it whether HomeGuard is on or not.
+ */
+export function watchAgents(config: AgentWatch | null): void {
+  shell()?.watchAgents?.(config ? JSON.stringify(config) : '');
+}
+
+/** The shell's alerts while Luma is in front; `detail` is an alert like AgentToast's. */
+export const AGENT_ALERT_EVENT = 'luma:agent-alert';
+
+/** Requests the shell alerted about that have ended; `detail` is their ids. */
+export const AGENT_ALERTS_ENDED_EVENT = 'luma:agent-alerts-ended';
+
+/** Tells the shell the page listens for AGENT_ALERT_EVENT; it holds alerts back until then. */
+export function listenForAgentAlerts(): void {
+  shell()?.listenForAgentAlerts?.();
+}
+
+/**
+ * The ids of the requests already alerted about, as JSON, from the history
+ * HomeGuard and the page share on Fire TV, so neither announces what the
+ * other did; undefined without such a shell.
+ */
+export const agentAlertHistory = (): string | undefined => shell()?.agentAlertHistory?.();
+
+/** Saves the shared history; false without such a shell. */
+export function saveAgentAlertHistory(json: string): boolean {
+  const host = shell();
+  if (!host?.saveAgentAlertHistory) return false;
+  host.saveAgentAlertHistory(json);
+  return true;
 }
