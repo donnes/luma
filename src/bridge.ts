@@ -5,6 +5,8 @@ export {
   launchApp,
   platformBack,
   registerRemoteKeys,
+  canOpenSettings,
+  openSettings,
   canOpenWebApp,
   openWebApp,
   canAlertOverApps,

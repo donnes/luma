@@ -1,5 +1,6 @@
 package app.luma.firetv;
 
+import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
@@ -37,6 +38,7 @@ public final class Shell {
   private static final String TAG = "luma";
   /** Same application id as the webOS package, excluded from the library. */
   private static final String SELF = "com.luma.launcher";
+  private static final String AMAZON_LAUNCHER = "com.amazon.tv.launcher";
 
   private final MainActivity activity;
   private final Handler main;
@@ -107,6 +109,37 @@ public final class Shell {
           }
         });
     return "{}";
+  }
+
+  /**
+   * Opens Fire TV Settings. Fire OS answers Android's standard Settings intent
+   * with a stub kept for compatibility tests, which shows nothing; the real
+   * grid is Amazon's launcher's MainSettingsActivity. Other Android TV devices
+   * get the standard intent.
+   */
+  @JavascriptInterface
+  public void openSettings() {
+    Intent fireTV =
+        new Intent()
+            .setClassName(AMAZON_LAUNCHER, AMAZON_LAUNCHER + ".ui.MainSettingsActivity")
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    Intent standard =
+        new Intent(android.provider.Settings.ACTION_SETTINGS)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    main.post(
+        () -> {
+          try {
+            activity.startActivity(fireTV);
+          } catch (ActivityNotFoundException e) {
+            try {
+              activity.startActivity(standard);
+            } catch (RuntimeException fallback) {
+              Log.w(TAG, "Opening settings failed", fallback);
+            }
+          } catch (RuntimeException e) {
+            Log.w(TAG, "Opening Fire TV Settings failed", e);
+          }
+        });
   }
 
   /**

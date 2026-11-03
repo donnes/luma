@@ -306,6 +306,28 @@ async function installMockTV(
   );
 }
 
+test('on Fire TV, TV settings opens Fire TV Settings, not the webOS settings app', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const w = window as any;
+    w.__launched = [];
+    w.__settingsOpened = 0;
+    w.LumaAndroid = {
+      isTV: () => true,
+      listApps: () => '{"apps":[]}',
+      launchApp: (id: string) => (w.__launched.push(id), '{}'),
+      exit: () => {},
+      openSettings: () => w.__settingsOpened++,
+    };
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'TV settings', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => page.evaluate(() => (window as any).__settingsOpened)).toBe(1);
+  expect(await page.evaluate(() => (window as any).__launched)).toEqual([]);
+});
+
 test('a TV uses its real inventory and launches TV settings separately from Luma settings', async ({
   page,
 }) => {

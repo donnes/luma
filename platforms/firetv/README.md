@@ -12,6 +12,10 @@ a synchronous JSON call:
 - `listApps(): string` — JSON `{ "apps": [{ "id": string, "title": string }] }`
 - `launchApp(appId: string): string` — JSON `{ "error"?: string }`
 - `exit(): void`
+- `openSettings(): void` — opens Fire TV Settings for the header's TV settings
+  button. Fire OS answers Android's standard Settings intent with an empty
+  stub, so the shell starts Amazon's `com.amazon.tv.launcher/.ui.MainSettingsActivity`
+  and falls back to the standard intent on other Android TV devices
 - `canAlertOverApps(): boolean` — whether HomeGuard is on (see below)
 - `watchAgents(config: string): void` — hands HomeGuard the T3 Code pairing
   and the alert's words as JSON; an empty string once unpaired. The shell

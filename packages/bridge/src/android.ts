@@ -10,6 +10,7 @@ interface LumaShell {
   listApps(): string;
   launchApp(appId: string): string;
   exit(): void;
+  openSettings?(): void;
   openWebApp?(url: string, then: string): void;
   canAlertOverApps?(): boolean;
   watchAgents?(config: string): void;
@@ -68,6 +69,13 @@ export function platformBack(): void {
   const host = shell();
   if (host) host.exit();
   else window.history.back();
+}
+
+/** The TV settings button opens the stick's own settings; com.palm.app.settings is webOS's. */
+export const canOpenSettings = (): boolean => typeof shell()?.openSettings === 'function';
+
+export function openSettings(): void {
+  shell()?.openSettings?.();
 }
 
 // POC: hosts a web app (T3 Code's own client) in a second shell WebView.

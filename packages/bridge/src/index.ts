@@ -9,6 +9,8 @@ export * from './types';
 export * from './catalog';
 export { nativeCall } from './webos';
 export {
+  canOpenSettings,
+  openSettings,
   canOpenWebApp,
   openWebApp,
   canAlertOverApps,

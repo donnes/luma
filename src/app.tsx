@@ -22,7 +22,14 @@ import { Weather } from './components/weather';
 import { AmbientClock, Clock, Greeting } from './components/clock';
 import { Navigation } from './components/navigation';
 import { defaultFavorites, sortApps } from './catalog';
-import { isTV, launchApp, loadInventory, platformBack } from './bridge';
+import {
+  canOpenSettings,
+  isTV,
+  launchApp,
+  loadInventory,
+  openSettings,
+  platformBack,
+} from './bridge';
 import { isBackKey, isMenuKey, moveFocus, type Direction } from './navigation';
 import { loadPreferences, savePreferences } from './storage';
 import { wallpapers } from './wallpapers';
@@ -520,12 +527,14 @@ function Launcher({
                 aria-label={t('tvSettings')}
                 title={t('tvSettings')}
                 onClick={() =>
-                  void onLaunch({
-                    id: 'com.palm.app.settings',
-                    title: 'TV settings',
-                    category: 'Utilities',
-                    brand: 'settings',
-                  })
+                  canOpenSettings()
+                    ? openSettings()
+                    : void onLaunch({
+                        id: 'com.palm.app.settings',
+                        title: 'TV settings',
+                        category: 'Utilities',
+                        brand: 'settings',
+                      })
                 }
               >
                 <Settings2 strokeWidth={1.8} />
