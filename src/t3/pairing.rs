@@ -53,6 +53,33 @@ impl Pairing {
         let _ = std::fs::remove_file(path);
     }
 
+    /// The pairing Fire TV's HomeGuard keeps for its alerts (`agent-watch.json`), which the
+    /// web launcher handed it: server origins best first, the token and the server's name.
+    /// Its lifetime wasn't kept, so a revoked token shows as expired on first use.
+    pub fn from_agent_watch(path: &Path) -> Option<Self> {
+        let config: Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+        let text = |key| {
+            config
+                .get(key)
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+        };
+        let routes: Vec<_> = config
+            .get("routes")?
+            .as_array()?
+            .iter()
+            .filter_map(|origin| Route::new(origin.as_str()?))
+            .collect();
+        Some(Self {
+            environment_id: text("environmentId")?.to_owned(),
+            label: text("source").unwrap_or_default().to_owned(),
+            token: text("token")?.to_owned(),
+            expires_at: 0,
+            paired_on: routes.first()?.clone(),
+            routes,
+        })
+    }
+
     pub fn expired(&self, now: i64) -> bool {
         self.expires_at != 0 && self.expires_at < now
     }
@@ -430,6 +457,30 @@ mod tests {
             ) & 0o777,
             0o600
         );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn a_fire_tv_pairing_saved_for_alerts_carries_over() {
+        let directory = std::env::temp_dir().join(format!("luma-t3-watch-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("agent-watch.json");
+        std::fs::write(
+            &path,
+            r#"{"environmentId":"env-1","routes":["http://192.168.1.21:3773/","https://pc.tail1234.ts.net/"],
+                "token":"token-1","source":"donnes-pc","asked":"asked a question","approval":"waiting"}"#,
+        )
+        .unwrap();
+        let pairing = Pairing::from_agent_watch(&path).unwrap();
+        assert_eq!(pairing.label, "donnes-pc");
+        assert_eq!(pairing.paired_on.url, "http://192.168.1.21:3773/");
+        assert_eq!(pairing.routes.len(), 2);
+        std::fs::write(
+            &path,
+            r#"{"environmentId":"env-1","routes":[],"token":"t"}"#,
+        )
+        .unwrap();
+        assert_eq!(Pairing::from_agent_watch(&path), None);
         std::fs::remove_dir_all(directory).unwrap();
     }
 

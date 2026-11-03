@@ -553,9 +553,15 @@ fn focused_navigation_tabs_switch_pages_immediately() {
     state.direction(Direction::Right, &controls(&state));
     assert_eq!(state.page, Page::Apps);
     assert_eq!(state.focus, Target::Nav(1));
+    // Agents sits between Apps and Settings, though Settings keeps page index 2.
+    state.direction(Direction::Right, &controls(&state));
+    assert_eq!(state.page, Page::Agents);
+    assert_eq!(state.focus, Target::Nav(crate::state::AGENTS_NAV));
     state.direction(Direction::Right, &controls(&state));
     assert_eq!(state.page, Page::Settings);
     assert_eq!(state.focus, Target::Nav(2));
+    state.direction(Direction::Left, &controls(&state));
+    assert_eq!(state.page, Page::Agents);
 }
 
 #[test]

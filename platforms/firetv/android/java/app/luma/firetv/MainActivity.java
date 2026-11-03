@@ -41,8 +41,11 @@ public class MainActivity extends SDLActivity {
   /** HomeGuard may be covering Amazon's home; drop the cover once Luma's window has drawn. */
   private static final long UNCOVER_DELAY_MS = 150;
 
-  /** From WebAppActivity, when T3 Code's session needs pairing again; handled with agents. */
+  /** From WebAppActivity, when T3 Code's session needs pairing again. */
   static final String ACTION_REPAIR_WEB_APP = "app.luma.firetv.REPAIR_WEB_APP";
+
+  /** Where the web app was headed when it asked; Luma takes it on its next loop. */
+  private static volatile String webRepair;
 
   private final Shell shell = new Shell(this);
   private final Handler main = new Handler(Looper.getMainLooper());
@@ -68,6 +71,20 @@ public class MainActivity extends SDLActivity {
         new IntentFilter(HomeGuard.ACTION_REPORT_LUMA),
         HomeGuard.PERMISSION,
         null);
+    // A restored activity would repeat the repair it was started for.
+    if (savedInstanceState == null) keepWebRepair(getIntent());
+  }
+
+  @Override
+  protected void onNewIntent(Intent intent) {
+    super.onNewIntent(intent);
+    keepWebRepair(intent);
+  }
+
+  private static void keepWebRepair(Intent intent) {
+    if (ACTION_REPAIR_WEB_APP.equals(intent.getAction())) {
+      webRepair = intent.getStringExtra(WebAppActivity.EXTRA_URL);
+    }
   }
 
   @Override
@@ -123,6 +140,27 @@ public class MainActivity extends SDLActivity {
 
   public String openSettings() {
     shell.openSettings();
+    return "{}";
+  }
+
+  /**
+   * Opens T3 Code's web app in {@link WebAppActivity}; {@code then}, when not empty, loads
+   * once the page has left /pair.
+   */
+  public void openWebApp(String url, String then) {
+    Intent intent = WebAppActivity.intent(this, url, then);
+    if (intent != null) main.post(() -> startActivity(intent));
+  }
+
+  public String takeWebRepair() {
+    String target = webRepair;
+    webRepair = null;
+    return target == null ? "" : target;
+  }
+
+  /** The T3 Code pairing HomeGuard alerts with; see {@link HomeGuard#watchAgents}. */
+  public String watchAgents(String config) {
+    HomeGuard.watchAgents(this, config);
     return "{}";
   }
 

@@ -40,7 +40,12 @@ pub enum Page {
     Home,
     Apps,
     Settings,
+    Agents,
 }
+
+/// Tabs in display order, as page indices: Agents is page 3 but sits before Settings.
+pub const NAV_ORDER: [usize; 4] = [0, 1, 3, 2];
+pub const AGENTS_NAV: usize = 3;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum Target {
@@ -100,6 +105,16 @@ pub enum Target {
     TileTest(String),
     TileRemove(String),
     TileEditor,
+    /// An action of the agent in the Agents spotlight, by position.
+    AgentAction(usize),
+    /// An agent on the Agents shelf, by thread id.
+    Agent(String),
+    AgentsConnection,
+    AgentsRetry,
+    PairAddress,
+    PairCode,
+    PairSubmit,
+    Unpair,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -133,15 +148,31 @@ pub struct Control {
 
 #[derive(Clone, Debug)]
 pub enum Overlay {
-    Options { id: String, restore: Target },
-    Delete { id: String, restore: Target },
-    Recents { restore: Target },
+    Options {
+        id: String,
+        restore: Target,
+    },
+    Delete {
+        id: String,
+        restore: Target,
+    },
+    Recents {
+        restore: Target,
+    },
     Keyboard,
     SystemKeyboard,
     WallpaperUpload,
     TileEditor,
-    BackgroundOptions { id: String, restore: Target },
-    BackgroundDelete { id: String, restore: Target },
+    BackgroundOptions {
+        id: String,
+        restore: Target,
+    },
+    BackgroundDelete {
+        id: String,
+        restore: Target,
+    },
+    /// The T3 Code server's addresses and Unpair.
+    AgentsConnection,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -169,6 +200,9 @@ pub enum TextField {
     Location,
     Name,
     InputName,
+    PairAddress,
+    PairCode,
+    Reply,
 }
 
 #[derive(Clone, Copy)]
@@ -248,7 +282,13 @@ pub struct State {
     pub greeting_name_draft: String,
     pub input_name: String,
     pub recents: crate::recents::Recents,
+    /// T3 Code, as the connection worker last reported it.
+    pub agents: crate::t3::Agents,
+    pub agents_ui: agents_state::AgentsUi,
 }
+
+#[path = "agents-state.rs"]
+pub mod agents_state;
 
 impl State {
     pub fn new(preferences: Preferences) -> Self {
@@ -291,6 +331,8 @@ impl State {
             greeting_name_draft: String::new(),
             input_name: String::new(),
             recents: crate::recents::Recents::default(),
+            agents: crate::t3::Agents::default(),
+            agents_ui: agents_state::AgentsUi::default(),
         }
     }
 
@@ -419,6 +461,7 @@ impl State {
             Page::Home => 0,
             Page::Apps => 1,
             Page::Settings => 2,
+            Page::Agents => AGENTS_NAV,
         }
     }
 
@@ -454,6 +497,7 @@ impl State {
         self.page = match index {
             1 => Page::Apps,
             2 => Page::Settings,
+            AGENTS_NAV => Page::Agents,
             _ => Page::Home,
         };
         self.focus = Target::Nav(self.page_index());
@@ -738,12 +782,16 @@ impl State {
                 .map(|app| Target::App(app.id.clone()))
                 .unwrap_or(Target::Filter(1)),
             Page::Settings => Target::Sidebar(0),
+            Page::Agents => self.agents_first_content(),
         }
     }
 
     pub fn focus(&mut self, target: Target, controls: &[Control]) {
         self.pointer = false;
         self.focus = target;
+        if let Target::Agent(id) = &self.focus {
+            self.agents_ui.selected = Some(id.clone());
+        }
         self.reveal_focus(controls);
         if let Target::Sidebar(section) = self.focus {
             if self.subpage == Some(Subpage::WeatherLocation) {
@@ -1363,9 +1411,13 @@ impl State {
                 }
             }
             if let Target::Nav(index) = self.focus {
+                let slot = NAV_ORDER
+                    .iter()
+                    .position(|page| *page == index)
+                    .unwrap_or(0);
                 let next = match direction {
-                    Direction::Left if index > 0 => Some(index - 1),
-                    Direction::Right if index < 2 => Some(index + 1),
+                    Direction::Left if slot > 0 => Some(NAV_ORDER[slot - 1]),
+                    Direction::Right if slot + 1 < NAV_ORDER.len() => Some(NAV_ORDER[slot + 1]),
                     _ => None,
                 };
                 if let Some(next) = next {
@@ -1660,6 +1712,17 @@ impl State {
 
     pub fn text(&mut self, text: &str) {
         if self.text_input_active() {
+            let limit = agents_state::draft_limit(self.keyboard_field);
+            if let Some(draft) = self.agents_draft(self.keyboard_field) {
+                let length = draft.chars().count();
+                draft.extend(
+                    text.chars()
+                        .filter(|c| !c.is_control())
+                        .take(limit.saturating_sub(length)),
+                );
+                self.dirty = true;
+                return;
+            }
             if self.keyboard_field == TextField::Location {
                 let mut query = self.weather.query.clone();
                 query.extend(
@@ -1703,7 +1766,9 @@ impl State {
 
     pub fn delete(&mut self) {
         if self.text_input_active() {
-            if self.keyboard_field == TextField::Location {
+            if let Some(draft) = self.agents_draft(self.keyboard_field) {
+                draft.pop();
+            } else if self.keyboard_field == TextField::Location {
                 let mut query = self.weather.query.clone();
                 query.pop();
                 self.weather.edit(query);
@@ -1738,6 +1803,10 @@ impl State {
     }
 
     fn commit_text_input(&mut self) -> Vec<Effect> {
+        if self.agents_draft(self.keyboard_field).is_some() {
+            self.commit_agents_text();
+            return vec![];
+        }
         if self.keyboard_field == TextField::Name {
             let name = std::mem::take(&mut self.greeting_name_draft);
             let name = name.trim();
@@ -1861,6 +1930,9 @@ impl State {
             TextField::Name => &self.greeting_name_draft,
             TextField::InputName => &self.input_name,
             TextField::Apps => &self.query,
+            TextField::PairAddress => &self.agents_ui.address,
+            TextField::PairCode => &self.agents_ui.code,
+            TextField::Reply => &self.agents_ui.reply,
         }
     }
     pub fn open_keyboard(&mut self, field: TextField) {
@@ -1873,10 +1945,11 @@ impl State {
             // The TV keyboard starts empty, so a new name replaces the old one.
             self.input_name.clear();
         }
-        if cfg!(all(
-            feature = "webos",
-            target_os = "linux",
-            target_arch = "arm"
+        // Fire TV's own keyboard has the remote's voice input and every character an address
+        // needs; Luma's on-screen keys don't.
+        if cfg!(any(
+            all(feature = "webos", target_os = "linux", target_arch = "arm"),
+            target_os = "android"
         )) {
             self.overlay = Some(Overlay::SystemKeyboard);
             self.focus = match field {
@@ -1884,6 +1957,9 @@ impl State {
                 TextField::Name => Target::GreetingName,
                 TextField::InputName => Target::InputRename,
                 TextField::Apps => Target::Search,
+                TextField::PairAddress | TextField::PairCode | TextField::Reply => {
+                    self.keyboard_return()
+                }
             };
             self.panel_started = None;
             self.dirty = true;
@@ -1912,6 +1988,9 @@ impl State {
             TextField::Name => Target::GreetingName,
             TextField::InputName => Target::InputRename,
             TextField::Apps => Target::Search,
+            TextField::PairAddress => Target::PairAddress,
+            TextField::PairCode => Target::PairCode,
+            TextField::Reply => self.agents_ui.reply_return.clone(),
         }
     }
 
@@ -1936,6 +2015,9 @@ impl State {
             && let Some(tile) = self.preferences.custom_tile(id).cloned()
         {
             return self.send_tile(tile);
+        }
+        if self.activate_agents() {
+            return vec![];
         }
         match self.focus.clone() {
             Target::Nav(index) => self.open(index),
@@ -2439,6 +2521,11 @@ impl State {
                     TextField::Name => self.greeting_name_draft.clear(),
                     TextField::InputName => self.input_name.clear(),
                     TextField::Apps => self.query.clear(),
+                    field @ (TextField::PairAddress | TextField::PairCode | TextField::Reply) => {
+                        if let Some(draft) = self.agents_draft(field) {
+                            draft.clear();
+                        }
+                    }
                 },
                 "Done" => {
                     self.overlay = None;
@@ -2461,6 +2548,10 @@ impl State {
         }
         if let Some(overlay) = self.overlay.take() {
             self.panel_started = None;
+            if matches!(overlay, Overlay::AgentsConnection) {
+                self.focus = Target::AgentsConnection;
+                return vec![];
+            }
             if let Overlay::BackgroundDelete { id, restore } = overlay {
                 self.overlay = Some(Overlay::BackgroundOptions { id, restore });
                 self.focus = Target::DeleteBackground;

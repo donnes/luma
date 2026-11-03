@@ -28,6 +28,7 @@ mod sdl_events;
 mod state;
 mod storage;
 mod t3;
+use state::agents_state::Outbound;
 mod text_rendering;
 #[path = "tile-editor.rs"]
 mod tile_editor;
@@ -701,6 +702,17 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<(), String> {
         weather_service::Client::new(options.weather_test_server.as_deref())?,
         weather_cache,
     );
+    // Scripted desktop captures never contact a T3 Code server.
+    let agents = t3::Service::new(&preferences_path, options.script.is_empty());
+    let web_origin_path = preferences_path.with_file_name("t3-web-origin");
+    state.agents_ui.web_origin = std::fs::read_to_string(&web_origin_path)
+        .ok()
+        .map(|origin| origin.trim().to_owned())
+        .filter(|origin| !origin.is_empty());
+    let mut agents_focus = None;
+    let mut agents_resumed = false;
+    #[cfg(target_os = "android")]
+    let mut agents_handed: Option<String> = None;
     let updates = update::Worker::new(webos && public_update_checks);
     let platform = Platform::new(
         webos,
@@ -1083,6 +1095,51 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<(), String> {
         }
         while let Ok(response) = updates.receiver.try_recv() {
             state.install_response(response);
+        }
+        for event in agents.events() {
+            state.agents_event(event);
+        }
+        for outbound in std::mem::take(&mut state.agents_ui.outbox) {
+            match outbound {
+                Outbound::Command(command) => agents.send(command),
+                Outbound::OpenWeb { url, then, origin } => {
+                    #[cfg(target_os = "android")]
+                    android::open_web_app(&url, &then);
+                    #[cfg(not(target_os = "android"))]
+                    let _ = (url, then);
+                    if let Err(error) = std::fs::write(&web_origin_path, origin) {
+                        eprintln!("Luma T3 Code web app: {error}");
+                    }
+                }
+            }
+        }
+        // The socket stays open only while Luma is in front.
+        if (visible && focused) != agents_resumed {
+            agents_resumed = visible && focused;
+            agents.send(if agents_resumed {
+                t3::Command::Resume
+            } else {
+                t3::Command::Pause
+            });
+        }
+        #[cfg(target_os = "android")]
+        {
+            // HomeGuard alerts over other apps with whatever pairing Luma has now.
+            if state.agents.loaded {
+                let config = state.agent_watch_config();
+                if agents_handed.as_ref() != Some(&config) {
+                    android::watch_agents(&config);
+                    agents_handed = Some(config);
+                }
+            }
+            if agents_resumed && let Some(target) = android::take_web_repair() {
+                state.repair_web_app(&target);
+            }
+        }
+        let focus = state.agents_focus_thread();
+        if focus != agents_focus {
+            agents.send(t3::Command::Focus(focus.clone()));
+            agents_focus = focus;
         }
         while let Ok(response) = platform.receiver.try_recv() {
             match response {

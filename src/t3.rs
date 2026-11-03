@@ -25,8 +25,14 @@ pub struct Service {
 }
 
 impl Service {
-    /// The pairing lives beside the preferences, as `t3-pairing.json`.
-    pub fn new(preferences: &Path) -> Self {
+    /// The pairing lives beside the preferences, as `t3-pairing.json`. A disabled service
+    /// (scripted previews) answers nothing and never reads the pairing.
+    pub fn new(preferences: &Path, enabled: bool) -> Self {
+        if !enabled {
+            let (sender, _) = std::sync::mpsc::channel();
+            let (_, receiver) = std::sync::mpsc::channel();
+            return Self { sender, receiver };
+        }
         let (sender, receiver) = connection::spawn(preferences.with_file_name("t3-pairing.json"));
         Self { sender, receiver }
     }
@@ -43,6 +49,8 @@ impl Service {
 /// What the UI knows about the connection, kept current from the worker's events.
 #[derive(Clone, Debug)]
 pub struct Agents {
+    /// The worker has reported the saved pairing (or none) at least once.
+    pub loaded: bool,
     pub status: Status,
     pub pairing: Option<Pairing>,
     pub route: Option<Route>,
@@ -53,6 +61,7 @@ pub struct Agents {
 impl Default for Agents {
     fn default() -> Self {
         Self {
+            loaded: false,
             status: Status::Unpaired,
             pairing: None,
             route: None,
@@ -74,7 +83,10 @@ impl Agents {
     pub fn apply(&mut self, event: Event) -> Option<Outcome> {
         match event {
             Event::Status(status) => self.status = status,
-            Event::Pairing(pairing) => self.pairing = pairing,
+            Event::Pairing(pairing) => {
+                self.pairing = pairing;
+                self.loaded = true;
+            }
             Event::Route(route) => self.route = route,
             Event::Shell(shell) => self.shell = shell,
             Event::Detail(detail) => self.detail = Some(detail),

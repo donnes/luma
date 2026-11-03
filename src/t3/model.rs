@@ -170,11 +170,6 @@ impl Shell {
         }
     }
 
-    pub fn agent(&self, thread_id: &str) -> Option<Agent<'_>> {
-        let thread = self.threads.get(thread_id)?;
-        Some(self.agent_for(thread))
-    }
-
     fn agent_for<'a>(&'a self, thread: &'a ThreadShell) -> Agent<'a> {
         Agent {
             thread,
@@ -234,25 +229,6 @@ impl Shell {
         agents.truncate(SHELF_SIZE);
         agents
     }
-
-    /// Every live agent, plus the ones that stopped within the last day, settled or not: the
-    /// shelf hides settled threads, but the inbox lists what finished.
-    pub fn inbox(&self, now: i64) -> Inbox<'_> {
-        let mut inbox = Inbox::default();
-        for agent in self.visible() {
-            if agent.status.needs_you() {
-                inbox.needs_you.push(agent);
-            } else if agent.status.working() {
-                inbox.working.push(agent);
-            } else if recent(agent.thread, now) {
-                inbox.done.push(agent);
-            }
-        }
-        inbox.needs_you.sort_by(oldest_first);
-        inbox.done.sort_by(|a, b| oldest_first(b, a));
-        inbox.working.sort_by(|a, b| oldest_first(b, a));
-        inbox
-    }
 }
 
 fn recent(thread: &ThreadShell, now: i64) -> bool {
@@ -265,13 +241,6 @@ fn oldest_first(a: &Agent, b: &Agent) -> std::cmp::Ordering {
     since(a)
         .cmp(&since(b))
         .then_with(|| a.thread.id.cmp(&b.thread.id))
-}
-
-#[derive(Debug, Default)]
-pub struct Inbox<'a> {
-    pub needs_you: Vec<Agent<'a>>,
-    pub done: Vec<Agent<'a>>,
-    pub working: Vec<Agent<'a>>,
 }
 
 // --- Thread detail ------------------------------------------------------------------------
@@ -864,58 +833,6 @@ mod tests {
         });
         assert_eq!(shell.threads.len(), 6);
         assert_eq!(shell.projects["p"].title, "Luma");
-    }
-
-    #[test]
-    fn the_inbox_groups_needs_you_done_and_working_threads_each_in_its_own_order() {
-        let mut shell = Shell::default();
-        shell.apply(snapshot(
-            1,
-            vec![
-                with("newer-request", |t| {
-                    t.pending_runtime_request = request("r2", "user_input", 1)
-                }),
-                with("older-request", |t| {
-                    t.pending_runtime_request = request("r1", "command", 9)
-                }),
-                // Started later but stepped longer ago: run start decides, not the last step.
-                with("newer-run", |t| {
-                    t.status = "running".into();
-                    t.latest_run_started_at = Some(minutes_ago(3));
-                    t.updated_at = minutes_ago(2);
-                }),
-                with("older-run", |t| {
-                    t.status = "running".into();
-                    t.latest_run_started_at = Some(minutes_ago(30));
-                    t.updated_at = minutes_ago(1);
-                }),
-                with("settled", |t| {
-                    t.status = "completed".into();
-                    t.settled_at = Some(minutes_ago(4));
-                    t.updated_at = minutes_ago(4);
-                }),
-                with("failed", |t| {
-                    t.status = "failed".into();
-                    t.updated_at = minutes_ago(8);
-                }),
-                with("finished", |t| {
-                    t.status = "completed".into();
-                    t.updated_at = minutes_ago(2);
-                }),
-                with("yesterday", |t| {
-                    t.status = "completed".into();
-                    t.updated_at = minutes_ago(60 * 25);
-                }),
-                with("archived", |t| {
-                    t.status = "completed".into();
-                    t.archived_at = Some(minutes_ago(1));
-                }),
-            ],
-        ));
-        let inbox = shell.inbox(now());
-        assert_eq!(ids(&inbox.needs_you), ["older-request", "newer-request"]);
-        assert_eq!(ids(&inbox.done), ["finished", "settled", "failed"]);
-        assert_eq!(ids(&inbox.working), ["newer-run", "older-run"]);
     }
 
     #[test]

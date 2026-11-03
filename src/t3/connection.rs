@@ -62,15 +62,6 @@ pub enum Action {
 }
 
 impl Action {
-    pub fn thread(&self) -> &str {
-        match self {
-            Self::Decide { thread, .. }
-            | Self::Answer { thread, .. }
-            | Self::Send { thread, .. }
-            | Self::Stop { thread } => thread,
-        }
-    }
-
     fn command(&self) -> Value {
         let mut command = match self {
             Self::Decide {
@@ -114,6 +105,7 @@ fn uuid() -> String {
     )
 }
 
+#[derive(Debug, PartialEq)]
 pub enum Command {
     Pair {
         address: String,
@@ -153,7 +145,25 @@ pub fn spawn(path: PathBuf) -> (Sender<Command>, Receiver<Event>) {
     let (commands, worker_commands) = mpsc::channel();
     let (worker_events, events) = mpsc::channel();
     thread::spawn(move || {
-        let pairing = Pairing::load(&path);
+        // Fire TV: HomeGuard's pairing from the web launcher, so it needn't pair again.
+        let pairing = Pairing::load(&path).or_else(|| {
+            let watch = path.with_file_name("agent-watch.json");
+            if !watch.exists() {
+                return None;
+            }
+            let Some(imported) = Pairing::from_agent_watch(&watch) else {
+                eprintln!("Luma T3 Code: HomeGuard's pairing is unreadable");
+                return None;
+            };
+            if let Err(error) = imported.save(&path) {
+                eprintln!("Luma T3 Code pairing: {error}");
+            }
+            eprintln!(
+                "Luma T3 Code: carried over HomeGuard's pairing with {}",
+                imported.name()
+            );
+            Some(imported)
+        });
         let mut worker = Worker {
             status: if pairing.is_some() {
                 Status::Paused
@@ -816,7 +826,12 @@ mod tests {
         else {
             unreachable!()
         };
-        assert_eq!(action.thread(), "t1");
+        assert_eq!(
+            action,
+            Action::Stop {
+                thread: "t1".into()
+            }
+        );
         assert_eq!(result, Ok(()));
         let sent = commands.lock().unwrap()[0].clone();
         assert_eq!(sent["type"], "thread.stop");

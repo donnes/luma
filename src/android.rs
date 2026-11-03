@@ -168,6 +168,48 @@ pub fn app_art(id: &str) -> Option<Vec<u8>> {
     })
 }
 
+/// Opens T3 Code's web app in Fire TV's second WebView; `then` (or none) loads after /pair.
+pub fn open_web_app(url: &str, then: &str) {
+    // SAFETY: as in `call`.
+    let Ok(mut env) = (unsafe { JNIEnv::from_raw(SDL_AndroidGetJNIEnv().cast()) }) else {
+        return;
+    };
+    let opened = env.with_local_frame(8, |env| -> Result<(), jni::errors::Error> {
+        // SAFETY: as in `call`.
+        let activity = unsafe { JObject::from_raw(SDL_AndroidGetActivity().cast()) };
+        let url = env.new_string(url)?;
+        let then = env.new_string(then)?;
+        env.call_method(
+            &activity,
+            "openWebApp",
+            "(Ljava/lang/String;Ljava/lang/String;)V",
+            &[JValue::Object(&url), JValue::Object(&then)],
+        )?;
+        Ok(())
+    });
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
+    }
+    if let Err(error) = opened {
+        eprintln!("Luma T3 Code web app: {error}");
+    }
+}
+
+/// Where T3 Code's web app was headed when it asked to be paired again, once.
+pub fn take_web_repair() -> Option<String> {
+    call("takeWebRepair", None)
+        .ok()
+        .filter(|target| !target.is_empty())
+}
+
+/// Hands HomeGuard the pairing it alerts with; an empty `config` once unpaired.
+pub fn watch_agents(config: &str) {
+    if let Err(error) = call("watchAgents", Some(config)) {
+        eprintln!("Luma agent alerts: {error}");
+    }
+}
+
 /// Calls a `String method()` or `String method(String)` on the activity from any thread.
 fn call(method: &str, argument: Option<&str>) -> Result<String, String> {
     // SAFETY: SDL attaches the calling thread to the VM and returns its JNIEnv.

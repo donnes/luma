@@ -5,8 +5,8 @@ use crate::{
     renderer::{Color, Draw, TextStyle, WHITE},
     state::{
         APPS_COLUMNS, Control, HOME_FADE_LEFT, HOME_FADE_RIGHT, HOME_STRIP_LEFT, HOME_STRIP_RIGHT,
-        HOME_TILE_PITCH, HOME_TILE_WIDTH, KEYS, Overlay, Page, Rect, SYSTEM_SECTION, State,
-        Subpage, Target, TextField, WIDGETS_SECTION,
+        HOME_TILE_PITCH, HOME_TILE_WIDTH, KEYS, NAV_ORDER, Overlay, Page, Rect, SYSTEM_SECTION,
+        State, Subpage, Target, TextField, WIDGETS_SECTION,
     },
     weather::{self, Unit},
 };
@@ -15,6 +15,12 @@ use std::{
     path::{Path, PathBuf},
 };
 use time::OffsetDateTime;
+
+#[path = "agents-view.rs"]
+mod agents_view;
+
+/// Tab labels by page index; `NAV_ORDER` places them.
+const NAV_LABELS: [&str; 4] = ["home", "apps", "settings", "agents"];
 
 const MAIN_TOP: f32 = 108.8;
 const FACE_HEIGHT: f32 = 154.4;
@@ -478,18 +484,19 @@ fn text(size: f32, weight: u16, tracking: f32) -> TextStyle {
 
 pub struct Navigation {
     pub surface: Rect,
-    pub items: [Rect; 3],
+    /// By page index.
+    pub items: [Rect; 4],
 }
 pub fn navigation(assets: &Assets, language: Language) -> Navigation {
-    let widths = ["home", "apps", "settings"]
+    let widths = NAV_LABELS
         .map(|key| (assets.width(language.t(key), text(20.8, 550, -0.02)) + 46.4).max(99.2));
-    let width = widths.iter().sum::<f32>() + 25.6 + 19.6;
+    let width = widths.iter().sum::<f32>() + 12.8 * (NAV_LABELS.len() - 1) as f32 + 19.6;
     let mut x = (1920. - width) / 2. + 9.8;
-    let items = widths.map(|width| {
-        let rect = Rect::new(x, 52.3, width, 49.);
-        x += width + 12.8;
-        rect
-    });
+    let mut items = [Rect::default(); 4];
+    for page in NAV_ORDER {
+        items[page] = Rect::new(x, 52.3, widths[page], 49.);
+        x += widths[page] + 12.8;
+    }
     Navigation {
         surface: Rect::new((1920. - width) / 2., 42.5, width, 68.6),
         items,
@@ -554,6 +561,7 @@ pub fn scene_with_pill(
         Page::Home => home(&mut out, state, assets, now),
         Page::Apps => library(&mut out, state, assets),
         Page::Settings => settings(&mut out, state, assets),
+        Page::Agents => agents_view::page(&mut out, state, assets),
     }
     if let Some(error) = &state.error
         && !state.inventory.apps.is_empty()
@@ -601,7 +609,8 @@ pub fn scene_with_pill(
         | Overlay::BackgroundDelete { .. }
         | Overlay::Keyboard
         | Overlay::WallpaperUpload
-        | Overlay::TileEditor),
+        | Overlay::TileEditor
+        | Overlay::AgentsConnection),
     ) = &state.overlay
     {
         let anchor = match overlay {
@@ -652,6 +661,7 @@ pub fn scene_with_pill(
             Overlay::Keyboard => keyboard(&mut out, state, assets),
             Overlay::WallpaperUpload => wallpaper_upload(&mut out, state, assets),
             Overlay::TileEditor => tile_editor(&mut out, state, assets),
+            Overlay::AgentsConnection => agents_view::connection_dialog(&mut out, state, assets),
             Overlay::SystemKeyboard | Overlay::Recents { .. } => {}
         }
         if !matches!(
@@ -691,6 +701,11 @@ pub fn scene_with_pill(
             out.controls = parent_controls;
             out.modal = parent_modal;
         }
+    }
+    if matches!(state.overlay, Some(Overlay::SystemKeyboard))
+        && state.keyboard_field == TextField::Reply
+    {
+        agents_view::reply_preview(&mut out, state, assets);
     }
     if let Some((notice, _)) = &state.notice {
         toast(&mut out, state, assets, notice);
@@ -736,7 +751,7 @@ fn header(
         // the destination tab's control rectangle.
         out.border(pill.inset(-5.), 37., 2., c(0xf0f0f0, 0.95));
     }
-    for (index, key) in ["home", "apps", "settings"].into_iter().enumerate() {
+    for (index, key) in NAV_LABELS.into_iter().enumerate() {
         let rect = layout.items[index];
         out.text(
             language.t(key),
@@ -3452,6 +3467,9 @@ fn keyboard(out: &mut Scene, state: &State, assets: &Assets) {
             TextField::Name => language.t("greetingName"),
             TextField::InputName => language.t("inputName"),
             TextField::Apps => language.t("findApp"),
+            TextField::PairAddress => language.t("agentsAddress"),
+            TextField::PairCode => language.t("agentsCode"),
+            TextField::Reply => language.t("agentReplyPrompt"),
         },
         Rect::new(389., 324., 1000., 44.),
         text(37.6, 500, -0.055).leading(1.1),
