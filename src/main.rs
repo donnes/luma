@@ -27,6 +27,7 @@ mod scroll_preview;
 mod sdl_events;
 mod state;
 mod storage;
+mod t3;
 mod text_rendering;
 #[path = "tile-editor.rs"]
 mod tile_editor;
