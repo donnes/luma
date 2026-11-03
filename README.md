@@ -84,6 +84,10 @@ When an agent newly asks a question or waits for an approval, a toast shows in L
 
 Pairing creates a 30-day session named "Luma TV" and pins the app to Home. Luma learns every address the server reports, then connects over the LAN when it's reachable and over Tailscale when it isn't. Select the connection label in the app to see the addresses or **Unpair**; revoke the session in T3 Code's Connections settings to end it there too. Replies use the TV keyboard, including its microphone where the remote has one.
 
+### Voice from an iPhone
+
+[Luma voice](packages/voice/README.md) is a small service that runs next to T3 Code. An iOS Shortcut on the Action button dictates your question, the service answers it with OpenAI and T3 Code, and the Shortcut speaks the reply. Start it with `pnpm voice`.
+
 ## Troubleshooting
 
 ### webOS 26: denied exec method
