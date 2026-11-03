@@ -5,7 +5,7 @@
 use crate::platform::{Request, Response};
 use jni::{
     JNIEnv,
-    objects::{JObject, JString, JValue},
+    objects::{JByteArray, JObject, JString, JValue},
 };
 use serde_json::Value;
 use std::{
@@ -135,6 +135,37 @@ fn streaming(id: &str) -> bool {
     ) || !["com.amazon.", "amazon.", "com.android."]
         .iter()
         .any(|prefix| id.starts_with(prefix))
+}
+
+/// The app's TV banner or icon as PNG, drawn by the shell; None when it ships neither.
+pub fn app_art(id: &str) -> Option<Vec<u8>> {
+    // SAFETY: as in `call`.
+    let mut env = unsafe { JNIEnv::from_raw(SDL_AndroidGetJNIEnv().cast()) }.ok()?;
+    let art = env.with_local_frame(8, |env| -> Result<Option<Vec<u8>>, jni::errors::Error> {
+        // SAFETY: as in `call`.
+        let activity = unsafe { JObject::from_raw(SDL_AndroidGetActivity().cast()) };
+        let id = env.new_string(id)?;
+        let png = env
+            .call_method(
+                &activity,
+                "appArt",
+                "(Ljava/lang/String;)[B",
+                &[JValue::Object(&id)],
+            )?
+            .l()?;
+        if png.is_null() {
+            return Ok(None);
+        }
+        Ok(Some(env.convert_byte_array(JByteArray::from(png))?))
+    });
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
+    }
+    art.unwrap_or_else(|error| {
+        eprintln!("Luma app art {id}: {error}");
+        None
+    })
 }
 
 /// Calls a `String method()` or `String method(String)` on the activity from any thread.

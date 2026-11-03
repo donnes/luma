@@ -193,8 +193,9 @@ public final class Shell {
 
   /**
    * PNG tile art for an installed app: its TV banner (the 16:9 card Android TV
-   * launchers show) or, without one, its icon. The web launcher showed it on
-   * its tiles; the native one doesn't read it yet.
+   * launchers show) or, without one, its icon, for apps without a bundled
+   * brand logo. Called on Luma's artwork worker thread, so drawing never
+   * blocks the UI.
    */
   synchronized byte[] art(String pkg) {
     if (art.containsKey(pkg)) {

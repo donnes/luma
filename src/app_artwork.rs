@@ -358,10 +358,14 @@ fn hsl(hue: f32, saturation: f32, lightness: f32) -> [u8; 3] {
     [r, g, b].map(|c| ((c + m).clamp(0., 1.) * 255.).round() as u8)
 }
 
+// On Android the shell draws each app's banner or icon; webOS's file lookups don't apply.
+#[cfg_attr(target_os = "android", allow(unreachable_code))]
 fn load(source: &Source) -> Option<Artwork> {
     if !valid_app_id(&source.id) {
         return None;
     }
+    #[cfg(target_os = "android")]
+    return crate::android::app_art(&source.id).and_then(|bytes| decode(&bytes));
     if let Some(image) = load_local(source, read_bounded) {
         return Some(image);
     }

@@ -126,6 +126,11 @@ public class MainActivity extends SDLActivity {
     return "{}";
   }
 
+  /** PNG tile art for an app, or null; see {@link Shell#art}. */
+  public byte[] appArt(String id) {
+    return shell.art(id);
+  }
+
   /** Copies the APK's artwork once per installed build. */
   private void unpackAssets(File target) throws IOException {
     String build;

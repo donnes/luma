@@ -26,7 +26,9 @@ webOS, built as SDL's `libmain.so` for 32-bit ARM (`armeabi-v7a`) and run by an
 - Everything else is the desktop build: inputs, recents and uninstall are webOS-only
   and stay hidden or empty, and the public update check is off because the release
   feed carries webOS packages.
-- Fire TV brands use their package names (`ANDROID_APPS` in `src/branding.rs`).
+- Fire TV brands use their package names (`ANDROID_APPS` in `src/branding.rs`). Other
+  apps show their own TV banner or icon, which `Shell.art()` draws and Luma reads
+  through `appArt(id): byte[]`.
 - `MainActivity` copies the APK's `assets/luma` (the `.build/assets` tree) to app
   storage once per installed build, about 2.5 seconds on a Fire TV Stick Lite, and
   passes `--assets`, `--preferences` and `--fullscreen` to Luma. Preferences are
@@ -130,5 +132,3 @@ services); enable it again with the commands above.
 
 - T3 Code agents: pairing, the agents page, the inbox on Menu and opening T3 Code's
   web app (`WebAppActivity` is kept for it).
-- Tile art for apps without a bundled brand. `Shell.art()` already draws each app's
-  TV banner or icon.

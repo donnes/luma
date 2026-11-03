@@ -44,7 +44,7 @@ impl Assets {
             root,
             version,
             metrics,
-            artwork: crate::app_artwork::Service::new(webos),
+            artwork: crate::app_artwork::Service::new(webos || cfg!(target_os = "android")),
         })
     }
     fn path(&self, path: impl AsRef<Path>) -> String {
