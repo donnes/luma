@@ -9,7 +9,6 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
-import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.os.Handler;
 import android.os.Looper;
@@ -210,7 +209,7 @@ public final class Shell {
         Drawable banner = info.loadBanner(pm);
         png =
             banner != null
-                ? encode(toTile(draw(banner, 480, 270)))
+                ? encode(draw(banner, 480, 270))
                 : encode(draw(info.loadIcon(pm), 256, 256));
       } catch (PackageManager.NameNotFoundException | RuntimeException e) {
         Log.w(TAG, "Drawing art for " + pkg + " failed", e);
@@ -218,37 +217,6 @@ public final class Shell {
     }
     art.put(pkg, png);
     return png;
-  }
-
-  /**
-   * Luma's tiles are 4:3 and TV banners 16:9. The banner keeps its full width
-   * and the bands above and below repeat a row just inside its top and bottom
-   * edges (clear of rounded corners), so flat colours and gradients run on to
-   * the tile's edge with nothing cropped.
-   */
-  private static Bitmap toTile(Bitmap banner) {
-    if (banner == null) {
-      return null;
-    }
-    int width = banner.getWidth();
-    int height = banner.getHeight();
-    int tileHeight = Math.round(width * 3f / 4f);
-    if (tileHeight <= height) {
-      return banner;
-    }
-    Bitmap tile = Bitmap.createBitmap(width, tileHeight, Bitmap.Config.ARGB_8888);
-    Canvas canvas = new Canvas(tile);
-    int top = (tileHeight - height) / 2;
-    int inset = Math.max(1, Math.round(height * 0.06f));
-    canvas.drawBitmap(banner, new Rect(0, inset, width, inset + 1), new Rect(0, 0, width, top), null);
-    canvas.drawBitmap(
-        banner,
-        new Rect(0, height - inset - 1, width, height - inset),
-        new Rect(0, top + height, width, tileHeight),
-        null);
-    canvas.drawBitmap(banner, 0, top, null);
-    banner.recycle();
-    return tile;
   }
 
   private static byte[] encode(Bitmap bitmap) {

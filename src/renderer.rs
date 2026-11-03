@@ -1117,8 +1117,16 @@ impl Renderer {
             return;
         };
         texture.frame = self.frame;
-        let scale =
-            (rect.w * 0.68 / texture.width as f32).min(rect.h * 0.68 / texture.height as f32);
+        let (fit_w, fit_h) = (
+            rect.w / texture.width as f32,
+            rect.h / texture.height as f32,
+        );
+        // Covering art fills the card and crops its overflow evenly; icons sit inset.
+        let scale = if image.cover {
+            fit_w.max(fit_h)
+        } else {
+            (fit_w * 0.68).min(fit_h * 0.68)
+        };
         let w = texture.width as f32 * scale;
         let h = texture.height as f32 * scale;
         let id = texture.id;

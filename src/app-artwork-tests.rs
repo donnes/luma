@@ -389,6 +389,7 @@ fn hundreds_of_apps_stay_within_the_cache_bounds_across_refreshes() {
             key: String::new(),
             pixels: RgbaImage::new(256, 256),
             backdrop: [[20; 3]; 2],
+            cover: false,
         })
     });
     for number in 0..300 {
@@ -419,6 +420,7 @@ fn decoded_cache_evicts_old_icons_when_scrolling_through_many_apps() {
             key: String::new(),
             pixels: RgbaImage::new(256, 256),
             backdrop: [[20; 3]; 2],
+            cover: false,
         })
     });
     for number in 0..80 {

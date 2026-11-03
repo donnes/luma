@@ -76,6 +76,9 @@ pub struct Artwork {
     pub pixels: RgbaImage,
     /// The card behind the icon: top and bottom of a vertical gradient (equal when flat).
     pub backdrop: [[u8; 3]; 2],
+    /// Fills the card rather than sitting inset on the backdrop, for art that is a whole
+    /// card already, such as an Android TV banner.
+    pub cover: bool,
 }
 
 impl Artwork {
@@ -143,6 +146,7 @@ fn decode(bytes: &[u8]) -> Option<Artwork> {
         key: String::new(),
         pixels,
         backdrop,
+        cover: false,
     })
 }
 
@@ -364,8 +368,14 @@ fn load(source: &Source) -> Option<Artwork> {
     if !valid_app_id(&source.id) {
         return None;
     }
+    // A 16:9 TV banner is the card itself; a square icon sits inset as on webOS.
     #[cfg(target_os = "android")]
-    return crate::android::app_art(&source.id).and_then(|bytes| decode(&bytes));
+    return crate::android::app_art(&source.id)
+        .and_then(|bytes| decode(&bytes))
+        .map(|artwork| Artwork {
+            cover: artwork.pixels.width() > artwork.pixels.height(),
+            ..artwork
+        });
     if let Some(image) = load_local(source, read_bounded) {
         return Some(image);
     }
