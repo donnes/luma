@@ -230,8 +230,12 @@ function Launcher({
     document.querySelector('main')?.scrollTo({ top: 0 });
   }, []);
   useEffect(() => {
-    // T3 Code's web app lost its session (or never got one): pair it again.
-    const repair = () => void repairT3Code().catch(() => notify(t('agentsWebFailed'), true));
+    // T3 Code's web app lost its session (or never got one): pair it again
+    // and go on to where it was headed, the event's detail.
+    const repair = (event: Event) => {
+      if (event instanceof CustomEvent && typeof event.detail === 'string')
+        void repairT3Code(event.detail).catch(() => notify(t('agentsWebFailed'), true));
+    };
     window.addEventListener('luma:t3-repair', repair);
     return () => window.removeEventListener('luma:t3-repair', repair);
   }, [notify, t]);

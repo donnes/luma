@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-  <string name="home_guard_description">Opens Luma instead of the Fire TV home screen when you press Home or leave an app.</string>
+  <string name="home_guard_description">Opens Luma instead of the Fire TV home screen when you press Home or leave an app, alerts you when a T3 Code agent needs you, and opens the agents inbox when you press Menu.</string>
 </resources>
