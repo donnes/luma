@@ -10,6 +10,8 @@ web application using only public `tizen.application` APIs — no rooting.
 - `tizen.application.getAppsInfo()` for the app library
 - `tizen.application.launch(id)` for app launches
 - Back key handling through the app lifecycle
+- `tizen.tvinputdevice.registerKey()` for Tools and the red key, which open
+  the agents inbox (needs the `tv.inputdevice` privilege in `config.xml`)
 
 HDMI input switching is not available from a Tizen application; the bridge
 reports a warning instead of a fake input list.

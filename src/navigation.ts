@@ -1,4 +1,22 @@
 export type Direction = 'left' | 'right' | 'up' | 'down';
+
+// Remote keys arrive as key codes: 461 is LG's Back, 10009 Samsung's. 457 is
+// LG's Menu (≡). Samsung remotes send Tools (10135) or the red key (403, the
+// same on LG), which Smart Remotes reach from their on-screen keypad. Fire TV
+// forwards its Menu button as ContextMenu.
+const backCodes = new Set([461, 10009]);
+const menuCodes = new Set([457, 10135, 403]);
+
+/** Takes DOM and React key events alike. */
+export const isBackKey = (event: Pick<KeyboardEvent, 'key' | 'keyCode'>) =>
+  event.key === 'Escape' || backCodes.has(event.keyCode);
+
+/** The remote's Menu button, or M on a keyboard outside a text field. */
+export const isMenuKey = (event: KeyboardEvent) =>
+  event.key === 'ContextMenu' ||
+  menuCodes.has(event.keyCode) ||
+  (event.key.toLowerCase() === 'm' && !(event.target instanceof HTMLInputElement));
+
 export interface FocusRect {
   id: string;
   x: number;

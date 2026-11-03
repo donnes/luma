@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { agentsConnection } from './connection';
-import { needsYou, isWorking, shelfAgents } from './model';
+import { inboxGroups, isWorking, shelfAgents } from './model';
 
 export const AGENTS_APP_ID = 'luma.agents';
 
@@ -8,9 +8,11 @@ export function useAgents() {
   const connection = agentsConnection();
   const state = useSyncExternalStore(connection.subscribe, connection.getState);
   const agents = useMemo(() => shelfAgents(state.shell), [state.shell]);
-  const waiting = agents.filter((agent) => needsYou(agent.status)).length;
+  const inbox = useMemo(() => inboxGroups(state.shell), [state.shell]);
+  // The shelf stops at a dozen cards; every request still counts.
+  const waiting = inbox.needsYou.length;
   const working = agents.filter((agent) => isWorking(agent.status)).length;
-  return { connection, state, agents, waiting, working };
+  return { connection, state, agents, inbox, waiting, working };
 }
 
 /** Holds the connection open while Luma is on screen and drops it when another app is. */

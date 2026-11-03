@@ -50,6 +50,20 @@ export async function launchApp(id: string): Promise<void> {
   });
 }
 
+// Back, OK and the arrows reach every app; other remote keys only reach apps
+// that register them. Tools and the red key open the inbox: Smart Remotes have
+// neither Menu nor Tools, but reach the red key from their on-screen keypad.
+// Registering a key this TV doesn't support throws, so check the list first.
+export function registerRemoteKeys(): void {
+  try {
+    const input = (window as any).tizen.tvinputdevice;
+    const supported = new Set(input.getSupportedKeys().map((key: { name: string }) => key.name));
+    for (const name of ['Tools', 'ColorF0Red']) if (supported.has(name)) input.registerKey(name);
+  } catch {
+    // Older firmware without tvinputdevice keeps the default keys.
+  }
+}
+
 export function platformBack(): void {
   try {
     (window as any).tizen.application.getCurrentApplication().exit();

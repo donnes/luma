@@ -23,7 +23,7 @@ import { AmbientClock, Clock, Greeting } from './components/clock';
 import { Navigation } from './components/navigation';
 import { defaultFavorites, sortApps } from './catalog';
 import { isTV, launchApp, loadInventory, platformBack } from './bridge';
-import { moveFocus, type Direction } from './navigation';
+import { isBackKey, isMenuKey, moveFocus, type Direction } from './navigation';
 import { loadPreferences, savePreferences } from './storage';
 import { wallpapers } from './wallpapers';
 import { moveFavorite } from './favorites';
@@ -32,6 +32,7 @@ import { categoryLabel, LanguageProvider, useTranslation } from './i18n';
 import { AgentsPage } from './components/agents/agents-page';
 import { AgentsSummary } from './components/agents/agents-summary';
 import { ConnectionButton } from './components/agents/connection-button';
+import { AgentsInbox } from './components/agents/inbox';
 import { OpenT3Button } from './components/agents/open-t3-button';
 import { AGENTS_APP_ID, useAgentsLifecycle } from './agents/use-agents';
 import { repairT3Code } from './agents/web-client';
@@ -92,6 +93,7 @@ function Launcher({
   const refreshing = useRef(false);
   const reducedMotion = preferences.reducedMotion;
   const [conversation, setConversation] = useState<string | null>(null);
+  const [inbox, setInbox] = useState(false);
   const agentsBack = useRef<(() => boolean) | null>(null);
   useAgentsLifecycle();
   // Luma's own T3 Code app sits in the library like an installed one; it
@@ -218,6 +220,7 @@ function Launcher({
   const openPage = useCallback((next: Page) => {
     setReordering(null);
     setConversation(null);
+    setInbox(false);
     setPage(next);
     setQuery('');
     setCategory(null);
@@ -284,13 +287,13 @@ function Launcher({
 
   const actions = useRef<{
     back: () => void;
-    options: () => void;
+    menu: () => void;
     hold: () => void;
     reorder: (key: string) => boolean;
     wake: () => boolean;
   }>({
     back: () => {},
-    options: () => {},
+    menu: () => {},
     hold: () => {},
     reorder: () => false,
     wake: () => false,
@@ -322,17 +325,14 @@ function Launcher({
         }
         platformBack();
       },
-      options: () => {
-        const id = (document.activeElement as HTMLElement | null)?.dataset.appId;
-        if (!optionsApp && id && appMap.has(id)) onOptions(appMap.get(id)!);
+      // The inbox closes itself on Menu; dialogs keep the remote until they close.
+      menu: () => {
+        if (!document.querySelector('[data-focus-scope="dialog"]')) setInbox(true);
       },
       hold: () => {
-        const node = document.activeElement as HTMLElement | null;
-        const app = node?.dataset.appId ? appMap.get(node.dataset.appId) : undefined;
-        if (!app || optionsApp) return;
-        if (page === 'home' && node?.dataset.focusable?.startsWith('favorite-'))
-          startReordering(app);
-        else onOptions(app);
+        const id = (document.activeElement as HTMLElement | null)?.dataset.appId;
+        const app = id ? appMap.get(id) : undefined;
+        if (app && !optionsApp) onOptions(app);
       },
       reorder: (key) => {
         if (!reordering) return false;
@@ -364,11 +364,7 @@ function Launcher({
         return;
       }
       const editable = event.target instanceof HTMLInputElement;
-      if (
-        event.key === 'Escape' ||
-        event.keyCode === 461 ||
-        (!editable && event.key === 'Backspace')
-      ) {
+      if (isBackKey(event) || (!editable && event.key === 'Backspace')) {
         event.preventDefault();
         if (!event.repeat) actions.current.back();
         return;
@@ -391,6 +387,12 @@ function Launcher({
         }
         return;
       }
+      // Ahead of the text-field check: the remote's Menu works while typing.
+      if (isMenuKey(event)) {
+        event.preventDefault();
+        if (!event.repeat) actions.current.menu();
+        return;
+      }
       const languageOption = (event.target as HTMLElement | null)?.dataset.focusable?.startsWith(
         'language-option-',
       );
@@ -403,11 +405,6 @@ function Launcher({
       if (directions[event.key]) {
         event.preventDefault();
         moveFocus(directions[event.key]);
-        return;
-      }
-      if (event.key === 'ContextMenu' || event.keyCode === 457 || event.key.toLowerCase() === 'm') {
-        event.preventDefault();
-        actions.current.options();
         return;
       }
       if (event.key === 'Enter' || event.keyCode === 13) {
@@ -458,7 +455,6 @@ function Launcher({
       reordering={prefix === 'favorite' && reordering === app.id}
       onLaunch={onLaunch}
       onOptions={onOptions}
-      onHold={prefix === 'favorite' ? startReordering : undefined}
     />
   );
   const wallpaper = wallpapers.find((item) => item.id === preferences.wallpaper) ?? wallpapers[0];
@@ -878,6 +874,15 @@ function Launcher({
           key="options"
           app={optionsApp}
           favorites={favoriteIds}
+          // Every tile on Home is a favorite; moving one starts from its options.
+          onMove={
+            page === 'home'
+              ? () => {
+                  setOptionsApp(null);
+                  startReordering(optionsApp);
+                }
+              : undefined
+          }
           hidden={preferences.hidden.includes(optionsApp.id)}
           onClose={() => setOptionsApp(null)}
           onPin={() => {
@@ -912,6 +917,16 @@ function Launcher({
                 : t('appHidden', { app: optionsApp.title }),
             );
           }}
+        />
+      ) : null}
+      {inbox ? (
+        <AgentsInbox
+          onClose={() => setInbox(false)}
+          onConversation={(threadId) => {
+            openPage('agents');
+            setConversation(threadId);
+          }}
+          notify={notify}
         />
       ) : null}
       {toast ? (

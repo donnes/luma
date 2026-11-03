@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Globe, Link2, Link2Off, LoaderCircle, ShieldCheck } from 'lucide-react';
 import { useAgents } from '../../agents/use-agents';
 import { useTranslation } from '../../i18n';
+import { isBackKey } from '../../navigation';
 import { ConnectionDialog } from './connection-dialog';
 import { routeLabels } from './parts';
 
@@ -15,7 +16,7 @@ export function ConnectionButton() {
   useEffect(() => {
     if (!open) return;
     const close = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' && event.keyCode !== 461) return;
+      if (!isBackKey(event)) return;
       event.preventDefault();
       event.stopPropagation();
       setOpen(false);
