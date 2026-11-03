@@ -218,6 +218,16 @@ impl Platform {
                 crate::recents::demo()
             };
             while let Ok(request) = requests.recv() {
+                #[cfg(target_os = "android")]
+                let request = match crate::android::handle(request) {
+                    Ok(response) => {
+                        if responses.send(response).is_err() {
+                            break;
+                        }
+                        continue;
+                    }
+                    Err(request) => request,
+                };
                 let response = match request {
                     Request::Recent {
                         generation,

@@ -26,6 +26,12 @@ pub fn decode(mut raw: sys::SDL_Event, webos: bool) -> Event {
             } else if webos && scancode == 505 {
                 raw.key.keysym.scancode = sys::SDL_Scancode::SDL_SCANCODE_ESCAPE;
                 raw.key.keysym.sym = WEBOS_EXIT_KEYCODE;
+            } else if cfg!(target_os = "android")
+                && scancode == sys::SDL_Scancode::SDL_SCANCODE_SELECT as u32
+            {
+                // Android TV remotes send OK as DPAD_CENTER, which SDL maps to Select.
+                raw.key.keysym.scancode = sys::SDL_Scancode::SDL_SCANCODE_RETURN;
+                raw.key.keysym.sym = i32::from(Keycode::Return);
             } else if webos && matches!(scancode, 484 | 485) {
                 // Cursor show/hide are notifications, not another physical key
                 // cancelling an in-progress Back hold.

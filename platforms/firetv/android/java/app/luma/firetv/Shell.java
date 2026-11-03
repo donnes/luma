@@ -1,5 +1,7 @@
 package app.luma.firetv;
 
+import android.app.Activity;
+import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
@@ -12,9 +14,7 @@ import android.graphics.drawable.Drawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
-import android.webkit.JavascriptInterface;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,11 +24,11 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
- * The {@code window.LumaAndroid} injected object — the synchronous contract of
- * {@code packages/bridge/src/android.ts}: {@code isTV}, {@code listApps} and
- * {@code launchApp} return JSON strings, {@code exit} parks the shell task.
+ * The app library, launches and Fire TV Settings for the native launcher,
+ * reached through {@link MainActivity} from Rust (src/android.rs):
+ * {@code listApps} and {@code launchApp} return JSON strings.
  *
- * Bridge calls run on a WebView worker thread, so package-manager queries
+ * Calls run on Luma's platform worker thread, so package-manager queries
  * finish synchronously there and anything touching the activity hops to the
  * main thread through a {@link Handler}.
  */
@@ -37,24 +37,19 @@ public final class Shell {
   private static final String TAG = "luma";
   /** Same application id as the webOS package, excluded from the library. */
   private static final String SELF = "com.luma.launcher";
+  private static final String AMAZON_LAUNCHER = "com.amazon.tv.launcher";
 
-  private final MainActivity activity;
+  private final Activity activity;
   private final Handler main;
   private Catalog catalog;
   /** Encoded tile art per package; a package without art maps to null. */
   private final HashMap<String, byte[]> art = new HashMap<>();
 
-  Shell(MainActivity activity) {
+  Shell(Activity activity) {
     this.activity = activity;
     this.main = new Handler(Looper.getMainLooper());
   }
 
-  @JavascriptInterface
-  public boolean isTV() {
-    return true;
-  }
-
-  @JavascriptInterface
   public synchronized String listApps() {
     JSONArray apps = new JSONArray();
     try {
@@ -81,7 +76,6 @@ public final class Shell {
     }
   }
 
-  @JavascriptInterface
   public synchronized String launchApp(String id) {
     String pkg = id == null ? "" : id.trim();
     if (pkg.isEmpty()) {
@@ -110,59 +104,33 @@ public final class Shell {
   }
 
   /**
-   * POC: opens a web app (T3 Code's own client) in {@link WebAppActivity};
-   * {@code then}, when not empty, loads once the page has left /pair.
+   * Opens Fire TV Settings. Fire OS answers Android's standard Settings intent
+   * with a stub kept for compatibility tests, which shows nothing; the real
+   * grid is Amazon's launcher's MainSettingsActivity. Other Android TV devices
+   * get the standard intent.
    */
-  @JavascriptInterface
-  public void openWebApp(String url, String then) {
-    Intent intent = WebAppActivity.intent(activity, url, then);
-    if (intent != null) main.post(() -> activity.startActivity(intent));
-  }
-
-  /** Whether {@link HomeGuard} is on to watch agents and alert over other apps. */
-  @JavascriptInterface
-  public boolean canAlertOverApps() {
-    return HomeGuard.isEnabled(activity);
-  }
-
-  /** Hands {@link HomeGuard} the pairing to watch agents with; empty once unpaired. */
-  @JavascriptInterface
-  public void watchAgents(String config) {
-    HomeGuard.watchAgents(activity, config);
-  }
-
-  /** The page now listens for HomeGuard's alerts; the ones held back meanwhile follow. */
-  @JavascriptInterface
-  public void listenForAgentAlerts() {
-    main.post(activity::onPageListening);
-  }
-
-  /** The alert history the page shares with HomeGuard; see {@link AgentWatch#loadSeen}. */
-  @JavascriptInterface
-  public String agentAlertHistory() {
-    try {
-      return AgentWatch.loadSeen(activity);
-    } catch (IOException e) {
-      // Reaches the page as an exception, so it doesn't take this for no history.
-      throw new IllegalStateException("Reading the agent alert history failed", e);
-    }
-  }
-
-  @JavascriptInterface
-  public void saveAgentAlertHistory(String json) {
-    if (json != null) AgentWatch.saveSeen(activity, json);
-  }
-
-  @JavascriptInterface
-  public synchronized void exit() {
-    // With HomeGuard on, parking the task would only flash Amazon's home
-    // before the guard brings Luma back, so Back on Luma's home stays put.
-    if (HomeGuard.isEnabled(activity)) {
-      return;
-    }
-    // Park the shell task instead of finishing it: the remote's Back key may
-    // already have been handled inside the app, and a relaunch is instant.
-    main.post(() -> activity.moveTaskToBack(true));
+  public void openSettings() {
+    Intent fireTV =
+        new Intent()
+            .setClassName(AMAZON_LAUNCHER, AMAZON_LAUNCHER + ".ui.MainSettingsActivity")
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    Intent standard =
+        new Intent(android.provider.Settings.ACTION_SETTINGS)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    main.post(
+        () -> {
+          try {
+            activity.startActivity(fireTV);
+          } catch (ActivityNotFoundException e) {
+            try {
+              activity.startActivity(standard);
+            } catch (RuntimeException fallback) {
+              Log.w(TAG, "Opening settings failed", fallback);
+            }
+          } catch (RuntimeException e) {
+            Log.w(TAG, "Opening Fire TV Settings failed", e);
+          }
+        });
   }
 
   /** One entry per package; the leanback activity wins over the phone one. */
@@ -225,9 +193,8 @@ public final class Shell {
 
   /**
    * PNG tile art for an installed app: its TV banner (the 16:9 card Android TV
-   * launchers show) or, without one, its icon. Served to the page as
-   * {@code luma.local/app-art/<package>.png} by the asset client; called on
-   * the WebView's IO thread, so drawing never blocks the UI.
+   * launchers show) or, without one, its icon. The web launcher showed it on
+   * its tiles; the native one doesn't read it yet.
    */
   synchronized byte[] art(String pkg) {
     if (art.containsKey(pkg)) {

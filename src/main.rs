@@ -1,3 +1,5 @@
+#[cfg(target_os = "android")]
+mod android;
 mod app_artwork;
 // Used by the TV build's Home lifecycle; the host build compiles it for its tests.
 #[cfg(all(feature = "webos", target_os = "linux"))]
@@ -81,9 +83,9 @@ struct Options {
 }
 
 impl Options {
-    fn parse() -> Result<Self, String> {
+    fn parse(args: impl Iterator<Item = String>) -> Result<Self, String> {
         let mut result = Self::default();
-        let mut args = std::env::args().skip(1).peekable();
+        let mut args = args.skip(1).peekable();
         // SAM/jailer puts native launch metadata (e.g. @system_native_app and
         // nid) in argv[1]. It is not a Luma CLI option. Keep the original argv
         // intact for SDL/libhelpers, which also read the process launch data.
@@ -325,7 +327,7 @@ fn effects(
                     continue;
                 }
                 if !state.launching {
-                    if platform.webos {
+                    if platform.webos || cfg!(target_os = "android") {
                         state.launching = true;
                         state.notify(state.preferences.language.t("opening"));
                         platform.send(Request::Launch(id));
@@ -428,7 +430,7 @@ fn script(
 }
 
 fn main() {
-    if let Err(error) = run() {
+    if let Err(error) = run(std::env::args()) {
         eprintln!("Luma native: {error}");
         std::process::exit(1);
     }
@@ -572,14 +574,14 @@ fn next_prewarm(
     prewarm.pop()
 }
 
-fn run() -> Result<(), String> {
+pub fn run(args: impl Iterator<Item = String>) -> Result<(), String> {
     let startup = Instant::now();
     // In place of LG's Home, before parsing, so option errors are kept too.
     #[cfg(all(feature = "webos", unix))]
     if platform::runs_as_lg_home() {
         log_home_output();
     }
-    let mut options = Options::parse()?;
+    let mut options = Options::parse(args)?;
     // A staged Home manifest (webOS 10/11) is only recognised from its launch parameters.
     #[cfg(all(feature = "webos", unix))]
     if options.webos_home && !platform::runs_as_lg_home() {
@@ -737,7 +739,8 @@ fn run() -> Result<(), String> {
     eprintln!("Luma SDL video driver: {}", video.current_video_driver());
     startup_stage("SDL video");
     let attributes = video.gl_attr();
-    if webos {
+    let gles = webos || cfg!(target_os = "android");
+    if gles {
         attributes.set_context_profile(GLProfile::GLES);
         attributes.set_context_version(2, 0);
     } else {
@@ -792,7 +795,8 @@ fn run() -> Result<(), String> {
     }
     let (window, _context) = opened.ok_or_else(|| failures.join("; "))?;
     gl::load_with(|name| video.gl_get_proc_address(name) as *const _);
-    if !webos {
+    // GLES has no MULTISAMPLE switch; a multisampled surface always resolves.
+    if !gles {
         unsafe { gl::Enable(gl::MULTISAMPLE) };
     }
     let mut samples = 0;
@@ -803,7 +807,7 @@ fn run() -> Result<(), String> {
         eprintln!("VSync: {error}");
     }
     let mut renderer =
-        renderer::Renderer::new(&assets.root.join("font.ttf"), webos, text_config.embolden)?;
+        renderer::Renderer::new(&assets.root.join("font.ttf"), gles, text_config.embolden)?;
     startup_stage("renderer");
     // Redraw only what changed since the back buffer's frame (LUMA_PARTIAL=0 draws in full).
     let partial = (std::env::var("LUMA_PARTIAL").as_deref() != Ok("0"))
@@ -1335,7 +1339,7 @@ fn run() -> Result<(), String> {
                             foreground.confirmed();
                         }
                         state.dirty = true;
-                        if webos {
+                        if webos || cfg!(target_os = "android") {
                             pending.push(Effect::Refresh);
                         }
                     }

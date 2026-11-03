@@ -142,7 +142,39 @@ pub const BRANDS: &[Brand] = &[
 ];
 
 pub fn for_app(id: &str) -> Option<&'static Brand> {
-    BRANDS.iter().find(|brand| brand.ids.contains(&id))
+    BRANDS
+        .iter()
+        .find(|brand| brand.ids.contains(&id))
+        .or_else(|| android_brand(id))
+}
+
+/// Fire TV and Android TV package names for the same brands; `BRANDS` lists webOS ids.
+const ANDROID_APPS: &[(&str, &str)] = &[
+    ("com.netflix.ninja", "netflix"),
+    ("com.amazon.firetv.youtube", "youtube"),
+    ("com.google.android.youtube.tv", "youtube"),
+    ("com.disney.disneyplus", "disney-plus"),
+    ("com.amazon.firebat", "prime-video"),
+    ("com.amazon.avod", "prime-video"),
+    ("com.amazon.amazonvideo.livingroom", "prime-video"),
+    ("com.apple.atve.amazon.appletv", "apple-tv"),
+    ("com.apple.atve.androidtv.appletv", "apple-tv"),
+    ("com.crunchyroll.crunchyroid", "crunchyroll"),
+    ("com.spotify.tv.android", "spotify"),
+    ("tv.twitch.android.viewer", "twitch"),
+    ("tv.twitch.android.app", "twitch"),
+    ("com.plexapp.android", "plex"),
+    ("org.jellyfin.androidtv", "jellyfin"),
+    ("com.hulu.livingroomplus", "hulu"),
+    ("com.cbs.ott", "paramount-plus"),
+    ("com.peacocktv.peacockandroid", "peacock"),
+];
+
+fn android_brand(id: &str) -> Option<&'static Brand> {
+    ANDROID_APPS
+        .iter()
+        .find(|(app, _)| *app == id)
+        .and_then(|(_, key)| for_key(key))
 }
 
 pub fn for_key(key: &str) -> Option<&'static Brand> {
@@ -215,6 +247,18 @@ mod tests {
                     path.display()
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod android_tests {
+    use super::*;
+
+    #[test]
+    fn every_android_package_names_a_bundled_brand() {
+        for (app, key) in ANDROID_APPS {
+            assert_eq!(for_app(app).map(|brand| brand.key), Some(*key), "{app}");
         }
     }
 }

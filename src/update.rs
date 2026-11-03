@@ -16,7 +16,8 @@ pub mod discovery {
     }
 
     pub fn public_checks_enabled(scripted: bool, simulated: bool) -> bool {
-        !scripted && !simulated
+        // The release feed carries webOS packages; Fire TV updates are side-loaded APKs.
+        !scripted && !simulated && !cfg!(target_os = "android")
     }
 
     pub struct Service {
