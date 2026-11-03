@@ -121,14 +121,25 @@ request, and remembers which across restarts for as long as the request is pendi
 an alert whose request ends first, say because it was answered elsewhere, is
 dropped.
 
-The native launcher has no agents page yet, so it can't pair: a pairing saved by
-the web launcher keeps working. The agents page, its inbox on Menu and Luma's own
-toasts come with the native agents port.
+The Agents tab pairs Luma with T3 Code and hands the pairing to HomeGuard
+(`watchAgents`), so alerts follow it, and an unpair clears HomeGuard's copy. On a stick
+that HomeGuard already watched for the web launcher, Luma carries that pairing over on
+first start.
+
+## T3 Code's web app
+
+Open on an agent shows its thread in T3 Code's own web app (`WebAppActivity`, with
+`assets/t3/tv.{css,js}` injected for the remote). Luma mints a one-time code with its
+token for the server's `/pair` page, then goes on to the thread, and remembers which
+origin already has a session (`files/t3-web-origin`). If the web app's session is gone,
+tv.js calls `LumaWeb.repair()`: MainActivity keeps the target, and Luma pairs it again
+and reopens it, at most once in 30 seconds.
 
 Force-stopping Luma also turns HomeGuard off (Android removes it from the enabled
 services); enable it again with the commands above.
 
 ## Not yet native
 
-- T3 Code agents: pairing, the agents page, the inbox on Menu and opening T3 Code's
-  web app (`WebAppActivity` is kept for it).
+- The agents inbox over other apps on Menu, and Luma's own alert toasts; HomeGuard's
+  toasts show over Luma for now.
+- Luma's own conversation view; Open uses T3 Code's web app.

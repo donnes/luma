@@ -71,42 +71,63 @@ fn elapsed(timestamp: &str, now: i64) -> String {
     }
 }
 
-/// `value` cut to `lines` lines at a word, with an ellipsis.
+/// `value` cut to `lines` lines with an ellipsis: at a word, or for one line, mid-word when a
+/// word cut would leave most of the line empty (commands are often one long token).
 fn clip(assets: &Assets, value: &str, style: TextStyle, width: f32, lines: usize) -> String {
     if assets.lines(value, style, width) <= lines {
         return value.to_owned();
     }
+    let fits = |candidate: &str| assets.lines(candidate, style, width) <= lines;
     let mut words: Vec<&str> = value.split(' ').collect();
     while words.len() > 1 {
         words.pop();
         let candidate = format!("{}…", words.join(" "));
-        if assets.lines(&candidate, style, width) <= lines {
-            return candidate;
+        if fits(&candidate) {
+            if lines > 1 || assets.width(&candidate, style) >= width * 0.6 {
+                return candidate;
+            }
+            break;
         }
     }
-    let mut cut: String = value.chars().collect();
-    while !cut.is_empty() && assets.width(&format!("{cut}…"), style) > width {
-        cut.pop();
+    // The longest prefix that fits, found by halving: values can run to thousands of chars.
+    let chars: Vec<char> = value.chars().collect();
+    let (mut low, mut high) = (0, chars.len());
+    while low < high {
+        let middle = (low + high).div_ceil(2);
+        let candidate: String = chars[..middle].iter().chain(['…'].iter()).collect();
+        if fits(&candidate) {
+            low = middle;
+        } else {
+            high = middle - 1;
+        }
     }
-    format!("{cut}…")
+    let cut: String = chars[..low].iter().collect();
+    format!("{}…", cut.trim_end())
 }
 
 fn text_height(assets: &Assets, value: &str, style: TextStyle, width: f32) -> f32 {
     assets.lines(value, style, width) as f32 * style.size * style.line_height
 }
 
-/// A pill with an optional icon and a label; returns its width.
-fn pill(
-    out: &mut Scene,
-    state: &State,
-    assets: &Assets,
+struct Pill<'a> {
     target: Target,
     x: f32,
     y: f32,
-    icon: Option<&str>,
-    label: &str,
+    icon: Option<&'a str>,
+    label: &'a str,
     primary: bool,
-) -> f32 {
+}
+
+/// A pill with an optional icon and a label; returns its width.
+fn pill(out: &mut Scene, state: &State, assets: &Assets, pill: Pill<'_>) -> f32 {
+    let Pill {
+        target,
+        x,
+        y,
+        icon,
+        label,
+        primary,
+    } = pill;
     let style = text(20.8, 600, -0.02);
     let icon_width = if icon.is_some() { 32. } else { 0. };
     let width = assets.width(label, style).ceil() + 56. + icon_width;
@@ -317,7 +338,17 @@ pub(super) fn page(out: &mut Scene, state: &State, assets: &Assets) {
                     c(0xffffff, 0.6),
                 );
             }
-            let line = [label, step.detail.replace('\n', " ")]
+            // Commands span lines and indent; one line reads better on a TV.
+            // One line holds about 150 characters; measuring more each frame is waste.
+            let detail: String = step
+                .detail
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .chars()
+                .take(240)
+                .collect();
+            let line = [label, detail]
                 .into_iter()
                 .filter(|part| !part.is_empty())
                 .collect::<Vec<_>>()
@@ -364,12 +395,14 @@ pub(super) fn page(out: &mut Scene, state: &State, assets: &Assets) {
             out,
             state,
             assets,
-            Target::AgentAction(index),
-            x,
-            548.,
-            icon,
-            &label,
-            primary,
+            Pill {
+                target: Target::AgentAction(index),
+                x,
+                y: 548.,
+                icon,
+                label: &label,
+                primary,
+            },
         );
         x += width + 16.;
     }
@@ -594,26 +627,34 @@ fn message(
             out,
             state,
             assets,
-            Target::AgentsRetry,
-            LEFT,
-            600.,
-            None,
-            action,
-            true,
+            Pill {
+                target: Target::AgentsRetry,
+                x: LEFT,
+                y: 600.,
+                icon: None,
+                label: action,
+                primary: true,
+            },
         );
     }
 }
 
-fn field(
-    out: &mut Scene,
-    state: &State,
-    assets: &Assets,
+struct Field<'a> {
     target: Target,
     y: f32,
-    label: &str,
-    value: &str,
-    placeholder: &str,
-) {
+    label: &'a str,
+    value: &'a str,
+    placeholder: &'a str,
+}
+
+fn field(out: &mut Scene, state: &State, assets: &Assets, field: Field<'_>) {
+    let Field {
+        target,
+        y,
+        label,
+        value,
+        placeholder,
+    } = field;
     out.text(
         label,
         Rect::new(LEFT, y, 900., 24.),
@@ -710,36 +751,42 @@ fn pairing(out: &mut Scene, state: &State, assets: &Assets) {
         out,
         state,
         assets,
-        Target::PairAddress,
-        436.,
-        language.t("agentsAddress"),
-        &ui.address,
-        language.t("agentsAddressPlaceholder"),
+        Field {
+            target: Target::PairAddress,
+            y: 436.,
+            label: language.t("agentsAddress"),
+            value: &ui.address,
+            placeholder: language.t("agentsAddressPlaceholder"),
+        },
     );
     field(
         out,
         state,
         assets,
-        Target::PairCode,
-        552.,
-        language.t("agentsCode"),
-        &ui.code,
-        language.t("agentsCodePlaceholder"),
+        Field {
+            target: Target::PairCode,
+            y: 552.,
+            label: language.t("agentsCode"),
+            value: &ui.code,
+            placeholder: language.t("agentsCodePlaceholder"),
+        },
     );
     pill(
         out,
         state,
         assets,
-        Target::PairSubmit,
-        LEFT,
-        690.,
-        Some(if ui.pairing { "refresh" } else { "check" }),
-        language.t(if ui.pairing {
-            "agentsPairing"
-        } else {
-            "agentsPair"
-        }),
-        true,
+        Pill {
+            target: Target::PairSubmit,
+            x: LEFT,
+            y: 690.,
+            icon: Some(if ui.pairing { "refresh" } else { "check" }),
+            label: language.t(if ui.pairing {
+                "agentsPairing"
+            } else {
+                "agentsPair"
+            }),
+            primary: true,
+        },
     );
     if let Some(error) = ui.error {
         out.text(

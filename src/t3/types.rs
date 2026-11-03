@@ -95,7 +95,7 @@ pub enum ShellStreamItem {
     ThreadUpdated {
         sequence: u64,
         location: String,
-        thread: ThreadShell,
+        thread: Box<ThreadShell>,
     },
     #[serde(rename = "thread.removed")]
     ThreadRemoved { sequence: u64, thread_id: String },

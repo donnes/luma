@@ -158,7 +158,7 @@ impl Shell {
                 location, thread, ..
             } => {
                 if location == "active" {
-                    self.threads.insert(thread.id.clone(), thread);
+                    self.threads.insert(thread.id.clone(), *thread);
                 } else {
                     self.threads.remove(&thread.id);
                 }
@@ -816,7 +816,7 @@ mod tests {
         shell.apply(ShellStreamItem::ThreadUpdated {
             sequence: 11,
             location: "archive".into(),
-            thread: thread("working"),
+            thread: Box::new(thread("working")),
         });
         assert!(!shell.threads.contains_key("working"));
 
