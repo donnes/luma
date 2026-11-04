@@ -1,6 +1,6 @@
-import { summary } from '../../../src/agents/model.ts';
-import type { Pairing } from '../../../src/agents/pairing.ts';
-import { RpcError } from '../../../src/agents/rpc.ts';
+import { summary } from './agents/model.ts';
+import type { Pairing } from './agents/pairing.ts';
+import { RpcError } from './agents/rpc.ts';
 import { converse, OpenAIFailure, type InputItem, type OpenAISettings } from './openai.ts';
 import { T3Session, T3Unavailable } from './t3.ts';
 import { runTool, toolDefinitions, type PendingAction, type ToolContext } from './tools.ts';

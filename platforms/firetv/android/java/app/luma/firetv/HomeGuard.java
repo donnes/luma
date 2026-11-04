@@ -69,18 +69,16 @@ import org.json.JSONObject;
  * <p>It also watches the paired T3 Code server ({@link AgentWatch}) and alerts
  * when an agent newly needs you: over another app as a toast in the top-right
  * corner, in a window that takes no focus, keys or touches, so the app
- * underneath keeps the remote and keeps playing; or, while Luma is in front,
- * through Luma's page, which shows the same toast itself. AgentWatch alone
- * decides what's new and what ended while the service runs; the page only
- * shows what it's sent. Several alerts show one after another, as on the
- * page, and one whose request ends, say because it was answered elsewhere,
- * leaves the screen or the queue, here or on the page.
+ * underneath keeps the remote and keeps playing. Luma leaves its alerts to
+ * this service on Fire TV, so the same toast shows over Luma. AgentWatch alone
+ * decides what's new and what ended while the service runs. Several alerts
+ * show one after another, and one whose request ends, say because it was
+ * answered elsewhere, leaves the screen or the queue.
  *
- * <p>The Menu key opens the agents inbox ({@link InboxActivity}) over
- * whatever app is in front, T3 Code's web app included. Luma's own page
- * handles Menu itself, so while it's in front the key goes through. The
- * service filters key events for this alone: every other key passes straight
- * on.
+ * <p>The Menu key in another app brings Luma forward with its agents inbox
+ * open; closing the inbox puts Luma behind that app again. Luma handles Menu
+ * itself while it's in front, so the key goes through then. The service
+ * filters key events for this alone: every other key passes straight on.
  *
  * <p>Events come only from Amazon's launcher package; window content is read
  * only to find the Luma tile there. Enable it once over ADB (see
@@ -100,12 +98,6 @@ public final class HomeGuard extends AccessibilityService {
   static final String ACTION_REPORT_LUMA = "app.luma.firetv.REPORT_LUMA";
   /** On LUMA_SHOWN: the pid of Luma's main process, which reported it. */
   private static final String EXTRA_PID = "pid";
-  /** To MainActivity, while Luma is in front. */
-  static final String ACTION_AGENT_ALERT = "app.luma.firetv.AGENT_ALERT";
-  static final String EXTRA_ALERT = "alert";
-  /** To MainActivity, whatever is in front, so the page's queue drops them too. */
-  static final String ACTION_AGENTS_ENDED = "app.luma.firetv.AGENTS_ENDED";
-  static final String EXTRA_REQUESTS = "requests";
   static final String PERMISSION = "com.luma.launcher.permission.HOME_GUARD";
 
   /** Longer than the app-switch delay; never leave the remote dead if Luma fails to start. */
@@ -150,11 +142,6 @@ public final class HomeGuard extends AccessibilityService {
             lumaPid = intent.getIntExtra(EXTRA_PID, 0);
             lumaShownAt = SystemClock.uptimeMillis();
             uncover();
-            // Luma's page takes the queue from here; this alert was already seen.
-            if (alert != null) {
-              main.removeCallbacks(hideAlert);
-              hideAlert();
-            }
           } else if (ACTION_LUMA_HIDDEN.equals(action)) {
             lumaVisible = false;
           } else if (ACTION_WATCH_AGENTS.equals(action) && agents != null) {
@@ -187,9 +174,11 @@ public final class HomeGuard extends AccessibilityService {
   }
 
   /**
-   * Luma's page hands over its pairing and the alert's words; see {@link
+   * Takes the T3 Code pairing and the alert's words; see {@link
    * AgentWatch#save}. Saved even while the service is off, which then reads
-   * it when it starts.
+   * it when it starts. The web launcher's agents page called this; the native
+   * launcher will once its agents page lands, and until then the saved pairing
+   * keeps alerts working.
    */
   static void watchAgents(Context context, String config) {
     AgentWatch.save(context, config);
@@ -267,8 +256,20 @@ public final class HomeGuard extends AccessibilityService {
     return menuOpensInbox;
   }
 
+  /** Brings Luma forward with the agents inbox open over the app in front. */
+  private void openInbox() {
+    Intent inbox = new Intent(this, MainActivity.class);
+    inbox.setAction(MainActivity.ACTION_OPEN_INBOX);
+    inbox.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    try {
+      startActivity(inbox);
+    } catch (RuntimeException e) {
+      Log.w(TAG, "Opening the agents inbox failed", e);
+    }
+  }
+
   /**
-   * Whether Luma's page is in front: it last reported so, and the process
+   * Whether Luma is in front: it last reported so, and the process
    * that reported it still runs. A Luma that died in front never reported
    * leaving. This asks the system only for this app's own processes, so
    * unlike a query of the windows it never waits on the app in front, and
@@ -284,17 +285,6 @@ public final class HomeGuard extends AccessibilityService {
       }
     }
     return false;
-  }
-
-  /** Opens the inbox over the app in front, or closes it if it's already there. */
-  private void openInbox() {
-    Intent inbox = new Intent(this, InboxActivity.class);
-    inbox.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-    try {
-      startActivity(inbox);
-    } catch (RuntimeException e) {
-      Log.w(TAG, "Opening the agents inbox failed", e);
-    }
   }
 
   private void returnToLuma() {
@@ -393,14 +383,10 @@ public final class HomeGuard extends AccessibilityService {
     cover = null;
   }
 
-  /** Luma's page shows its own toast while it's in front; elsewhere the alert goes over the app. */
+  /** Luma leaves its alerts to this service on Fire TV, so they go over Luma too. */
   private void onAgentAlert(JSONObject alert) {
-    if (lumaInFront()) {
-      toPage(alert);
-    } else {
-      nextAlerts.add(alert);
-      if (this.alert == null) showNextAlert();
-    }
+    nextAlerts.add(alert);
+    if (this.alert == null) showNextAlert();
   }
 
   private void onAgentsEnded(Set<String> requestIds) {
@@ -411,25 +397,13 @@ public final class HomeGuard extends AccessibilityService {
       main.removeCallbacks(hideAlert);
       hideAlert();
     }
-    Intent intent = new Intent(ACTION_AGENTS_ENDED);
-    intent.setPackage(getPackageName());
-    intent.putStringArrayListExtra(EXTRA_REQUESTS, new ArrayList<>(requestIds));
-    sendBroadcast(intent, PERMISSION);
   }
 
-  private void toPage(JSONObject alert) {
-    Intent intent = new Intent(ACTION_AGENT_ALERT);
-    intent.setPackage(getPackageName());
-    intent.putExtra(EXTRA_ALERT, alert.toString());
-    sendBroadcast(intent, PERMISSION);
-  }
-
-  /** Shows the next queued alert; once Luma is in front, its page takes the rest. */
+  /** Shows the next queued alert. */
   private void showNextAlert() {
     JSONObject next;
     while ((next = nextAlerts.poll()) != null) {
-      if (lumaInFront()) toPage(next);
-      else if (showAlert(next)) return;
+      if (showAlert(next)) return;
     }
   }
 

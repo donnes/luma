@@ -1,19 +1,11 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "react", "jsx-a11y", "oxc"],
+  "plugins": ["oxc"],
   "categories": {
     "correctness": "error"
   },
   "rules": {
-    "eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
-    "react/react-in-jsx-scope": "off",
-    "jsx-a11y/prefer-tag-over-role": "off"
+    "eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }]
   },
-  "ignorePatterns": [
-    "node_modules/**",
-    "dist/**",
-    ".build/**",
-    "test-results/**",
-    "playwright-report/**"
-  ]
+  "ignorePatterns": [".agents/skills/**", "node_modules/**", "dist/**", ".build/**", "target/**"]
 }

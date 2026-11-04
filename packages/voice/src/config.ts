@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { parsePairing, type Pairing } from '../../../src/agents/pairing.ts';
+import { parsePairing, type Pairing } from './agents/pairing.ts';
 
 // Everything the service keeps lives in ~/.config/luma/. The pairing and the
 // Shortcut token are secrets, so they're written readable by Donald only.

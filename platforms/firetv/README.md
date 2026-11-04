@@ -1,105 +1,87 @@
 # Android TV / Fire TV
 
-Target: Android TV and Fire TV sticks. Luma runs in a thin WebView APK shell.
+Target: Android TV and Fire TV sticks. Luma is the same native Rust launcher as on
+webOS, built as SDL's `libmain.so` for 32-bit ARM (`armeabi-v7a`) and run by an
+`SDLActivity` in a small APK.
 
-## Bridge
+## How it fits together
 
-`packages/bridge/src/android.ts` talks to the shell through
-`window.LumaAndroid`, injected with `addJavascriptInterface`; every method is
-a synchronous JSON call:
-
-- `isTV(): boolean`
-- `listApps(): string` — JSON `{ "apps": [{ "id": string, "title": string }] }`
-- `launchApp(appId: string): string` — JSON `{ "error"?: string }`
-- `exit(): void`
-- `canAlertOverApps(): boolean` — whether HomeGuard is on (see below)
-- `watchAgents(config: string): void` — hands HomeGuard the T3 Code pairing
-  and the alert's words as JSON; an empty string once unpaired. The shell
-  saves it even while HomeGuard is off
-- `listenForAgentAlerts(): void` — the page now listens for HomeGuard's
-  alerts (`luma:agent-alert`) and the requests that ended since
-  (`luma:agent-alerts-ended`); the shell holds them back until it does
-- `agentAlertHistory(): string` and `saveAgentAlertHistory(json: string): void`
-  — the ids of the requests already alerted about, as a JSON array (`null`
-  before any), shared with HomeGuard
-
-The inbox window over other apps (see below) loads the same bundle with
-`#inbox`, and its `window.LumaAndroid` has `openWebApp(url, then)` alone.
-
-The shell (`platforms/firetv/android/`) injects the object with
-`addJavascriptInterface` and implements it as `app.luma.firetv.Shell`. App ids
-are **Android package names** — on purpose, so they pass the shared
-`validAppId` check (component names would contain `/`) and match the fixture
-grid — and each launch resolves the leanback-preferred launchable activity
-through PackageManager. No permissions beyond internet are needed.
-
-## Shell behavior
-
-- `dist/app` is shipped as APK assets and served from the synthetic origin
-  `https://luma.local/` through `WebViewClient.shouldInterceptRequest`
-  (`file://` cannot load subresources securely or keep CSP/localStorage
-  semantics). Any other origin — the weather API — goes to the network.
-- The Back key dispatches an `Escape` keydown into the app, which owns panel
-  and page back-stacks. The WebView keeps Menu from the page too, so the shell
-  dispatches a `ContextMenu` keydown for it, which opens Luma's inbox. When the app has nothing to close,
-  `platformBack()` reaches `exit()` and the shell calls `moveTaskToBack`
-  instead of finishing: relaunching Luma is instant and the task survives.
-- D-pad navigation and OK work as arrow/Enter key events, like a browser.
-- The same APK installs on phones via its plain `LAUNCHER` filter; TVs show
-  the leanback tile with `res/drawable/ic_banner.png`.
+- `native/` is a Cargo package whose library is `../../../src/main.rs`, built as a
+  `cdylib` named `main`. It's its own workspace, so the root workspace and lock file
+  stay upstream's. Its dependencies match the root package, and `build.mjs` checks
+  that both use the same version.
+- `src/android.rs` (compiled for Android only) is SDL's `SDL_main`. It sends Luma's
+  stderr to logcat under the tag `luma`, traps Back so Luma owns the Back stack, and
+  answers the platform worker's requests through JNI on `MainActivity`:
+  - `listApps(): String`, JSON `{ "apps": [{ "id": string, "title": string }] }`.
+    App ids are Android package names. Amazon's own tools and storefronts are left
+    out, except Prime Video and YouTube.
+  - `launchApp(id: String): String`, JSON `{ "error"?: string }`. Each launch
+    resolves the leanback-preferred launchable activity through PackageManager.
+  - `openSettings(): String`. The Fire TV settings row in Settings → System
+    launches webOS's `com.palm.app.settings`, which Android answers with this. Fire OS answers
+    Android's standard Settings intent with an empty stub, so the shell starts
+    Amazon's `com.amazon.tv.launcher/.ui.MainSettingsActivity` and falls back to
+    the standard intent on other Android TV devices.
+- Everything else is the desktop build: inputs, recents and uninstall are webOS-only
+  and stay hidden or empty, and the public update check is off because the release
+  feed carries webOS packages.
+- Fire TV brands use their package names (`ANDROID_APPS` in `src/branding.rs`). Other
+  apps show their own TV banner or icon, which `Shell.art()` draws and Luma reads
+  through `appArt(id): byte[]`.
+- `MainActivity` copies the APK's `assets/luma` (the `.build/assets` tree) to app
+  storage once per installed build, about 2.5 seconds on a Fire TV Stick Lite, and
+  passes `--assets`, `--preferences` and `--fullscreen` to Luma. Preferences are
+  `files/preferences.json`; the web launcher's localStorage isn't migrated.
+- The remote's D-pad arrives as arrow keys. OK is `DPAD_CENTER`, which SDL maps to
+  Select and `src/sdl_events.rs` turns into Enter.
 
 ## Packaging
 
 One-time prerequisites:
 
-- Node 22+, `pnpm install` at the repo root.
-- Android SDK with **build-tools 35** and a platform (android-33+), e.g.
-  [cmdline-tools](https://developer.android.com/studio#command-line-tools-only):
-  `sdkmanager "build-tools;35.0.0" "platforms;android-34"`, then
-  `export ANDROID_HOME=…`.
-- A JDK: 17–21 recommended. Newer JDKs work with build-tools 35's `d8`
-  (build-tools 34's d8 fails on javac 27 output); if tooling complains, pin
-  one: `mise x java@temurin-17 -- node platforms/firetv/build.mjs`.
+- Node 22+ and `pnpm install` at the repo root, plus `pnpm assets` (see
+  [development.md](../../development.md)).
+- An Android SDK with build-tools 34+, a platform (android-34+), an NDK and CMake:
+  `sdkmanager "build-tools;35.0.0" "platforms;android-34" "ndk;27.1.12297006" "cmake;3.22.1"`,
+  then `export ANDROID_HOME=…`.
+- `rustup target add armv7-linux-androideabi`, `pkg-config`, and a JDK (17–21
+  recommended).
 
 ```sh
-pnpm build && node platforms/firetv/build.mjs
+pnpm assets && node platforms/firetv/build.mjs
 ```
 
-produces **`platforms/firetv/luma.apk`** — no Gradle. The script wires
-together `aapt2` (manifest, launcher art generated from
-`public/app-icon.svg`, and `dist/app` as `assets/app/`), `javac --release 8`,
-`d8`, `zip`, `zipalign`, and `apksigner`. Signature v1+v2 keeps it installable
-from Fire OS 5 onward.
+produces **`platforms/firetv/luma.apk`**, without Gradle. The script downloads the
+SDL 2.30.12 source (the release upstream pins for webOS, checked by SHA-256) into
+`.build/firetv`, builds `libSDL2.so` with the SDK's CMake, cross-compiles
+`libmain.so`, then runs `aapt2`, `javac --release 8` (the shell and SDL's own Java
+classes), `d8`, `zip`, `zipalign` and `apksigner`.
 
-The debug keystore `keystore/debug.jks` (alias `luma`, password `android`)
-is committed on purpose: reinstalls keep the same app identity, and custom
-favorites stored in the WebView's localStorage survive updates. Rebuilding a
-release for other people? Bump `android:versionCode` in the manifest so
-`adb install -r` accepts it.
+The debug keystore `keystore/debug.jks` (alias `luma`, password `android`) is
+gitignored. Keep it: an APK signed with another key won't install over the existing
+app, and uninstalling first wipes Luma's preferences.
 
 ## Install
 
-On the stick: Settings → My Fire TV → Developer Options → **ADB Debugging**
-and **Apps from Unknown Sources**, note the IP under Settings → About.
+On the stick: Settings → My Fire TV → Developer Options → **ADB Debugging** and
+**Apps from Unknown Sources**, and note the IP under Settings → About.
 
 ```sh
 adb connect <stick-ip>          # port 5555 by default
 adb install -r platforms/firetv/luma.apk
+adb logcat -s luma              # Luma's own output
 ```
-
-Afterward log in over the network at `adb logcat luma:V adb:d *:S` to watch
-console output, and `adb shell monkey -p com.luma.launcher 1` to launch.
 
 ## Staying in Luma
 
-Fire OS won't accept a replacement home screen: Home always opens Amazon's
-launcher, and most apps exit to it. The APK includes an accessibility service,
-`app.luma.firetv.HomeGuard`, that watches window changes of
-`com.amazon.tv.launcher` and brings Luma back whenever its home screen
-appears. Other launcher screens, such as voice search results, stay. It also
-opens Luma after a reboot, because enabled services start with the system.
-It runs in its own `:guard` process so the low-memory killer can take the
-WebView without taking the service along.
+Fire OS won't accept a replacement home screen: Home always opens Amazon's launcher,
+and most apps exit to it. The APK includes an accessibility service,
+`app.luma.firetv.HomeGuard`, that watches window changes of `com.amazon.tv.launcher`
+and brings Luma back whenever its home screen appears. Other launcher screens, such
+as voice search results and Settings, stay. It also opens Luma after a reboot,
+because enabled services start with the system. It runs in its own `:guard` process
+so the low-memory killer can take Luma without taking the service along.
 
 Enable it once over ADB (Fire OS 7 has no toggle for side-loaded services):
 
@@ -110,108 +92,62 @@ adb shell settings put secure accessibility_enabled 1
 ```
 
 That command replaces the list of enabled services; check
-`adb shell settings get secure enabled_accessibility_services` first if
-others are in use. To turn it off, set the list to `'""'`.
+`adb shell settings get secure enabled_accessibility_services` first if others are
+in use. To turn it off, set the list to `'""'`.
 
-**Pin Luma to the Fire TV home bar** (Your apps → select Luma → Menu →
-Move to front). After Home, Android blocks background activity starts for
-about five seconds, but the foreground app is exempt; with Luma pinned, the
-service clicks its tile and Amazon's launcher opens Luma itself.
+**Pin Luma to the Fire TV home bar** (Your apps → select Luma → Menu → Move to
+front). After Home, Android blocks background activity starts for about five
+seconds, but the foreground app is exempt; with Luma pinned, the service clicks its
+tile and Amazon's launcher opens Luma itself.
 
 - Backing out of an app returns to Luma immediately.
-- Home reaches Luma in about 2.5–4 seconds when pinned (five otherwise). The
-  service can only react once Amazon's home draws: Android 9 handles Home
-  before accessibility key filters, and Fire OS keeps the `homekey` broadcast
-  to its own apps. Until Luma is back, an overlay in Luma's colours hides
-  Amazon's home and swallows remote keys.
-- While the service is on, Back on Luma's home screen stays in Luma instead
-  of parking the task. Fire TV Settings is a separate app and still opens
-  from the Home long-press menu.
+- Home reaches Luma in about 2.5–4 seconds when pinned (five otherwise). The service
+  can only react once Amazon's home draws: Android 9 handles Home before
+  accessibility key filters, and Fire OS keeps the `homekey` broadcast to its own
+  apps. Until Luma is back, an overlay in Luma's colours hides Amazon's home and
+  swallows remote keys.
 
 ## Agent alerts
 
-When a T3 Code agent newly needs you, a toast shows in the top-right corner
-for six seconds: inside Luma when it's in front, and over any other app
-otherwise, video included. HomeGuard draws the latter in an accessibility
-overlay window that takes no focus, keys or touches, so the app underneath
-keeps the remote and keeps playing.
+When a T3 Code agent newly needs you, HomeGuard shows a toast in the top-right
+corner for six seconds, over any app and over Luma, video included. Luma draws its
+own toasts on other platforms and leaves them to HomeGuard here. HomeGuard draws it in
+an accessibility overlay window that takes no focus, keys or touches, so the app
+underneath keeps the remote and keeps playing.
 
-Luma's page can't watch agents from behind another app: Chromium throttles a
-hidden page's timers to once a minute and freezes it after a few minutes,
-and the low-memory killer takes the WebView process (about 105 MB with its
-renderer) as soon as it drops to a cached app. So HomeGuard keeps its own
-small connection (`AgentWatch`: a WebSocket client for the shell stream
-only, about 10 MB more in `:guard`), with the pairing the page hands over. It
-alerts once per request, and remembers which across restarts for as long as
-the request is pending. Several alerts at once show one after another, and an
-alert whose request ends first, say because it was answered elsewhere, is
-dropped. While Luma is in front, it passes the alert to the page, which shows
-the same toast unless the agents page already shows that agent, and it tells
-the page which requests ended so their queued toasts go too. When HomeGuard
-starts, it asks MainActivity whether Luma is already in front.
+HomeGuard keeps its own small connection (`AgentWatch`: a WebSocket client for the
+shell stream only) with the pairing saved in its preferences. It alerts once per
+request, and remembers which across restarts for as long as the request is pending
+(`files/agent-alerts-seen.json`). Several alerts at once show one after another, and
+an alert whose request ends first, say because it was answered elsewhere, is
+dropped.
 
-While HomeGuard is on, it alone decides what's new; while it's off, the page
-does, as on webOS and Tizen. Both keep the same history of alerted requests
-(`files/agent-alerts-seen.json`), so turning HomeGuard on or off doesn't
-announce a request again that the other one already did.
+The T3 Code tile opens the agents page, which pairs Luma with T3 Code and hands the pairing to HomeGuard
+(`watchAgents`), so alerts follow it, and an unpair clears HomeGuard's copy. On a stick
+that HomeGuard already watched for the web launcher, Luma carries that pairing over on
+first start.
 
-Force-stopping Luma also turns HomeGuard off (Android removes it from the
-enabled services); enable it again with the commands above.
+## Agents inbox
 
-## Agents inbox over other apps
+The remote's Menu key opens the agents inbox on any Luma page. In another app,
+HomeGuard filters Menu (the only key it filters), brings Luma forward with
+`app.luma.firetv.OPEN_INBOX`, and Luma opens the inbox; closing it with Back or Menu
+calls `returnToApp`, which moves Luma's task behind that app again. The app stops
+while Luma is in front, so a video pauses there. OK on an agent opens its thread in
+T3 Code's web app.
 
-Menu (≡) opens Luma's agents inbox on top of whatever app is in front,
-including T3 Code's web app. HomeGuard filters key events for this: it
-consumes Menu when Luma's own page isn't in front and lets every other key
-through untouched. In Luma, Menu goes through to the page, which opens the
-same inbox itself. HomeGuard counts the page as in front when MainActivity
-last reported it shown and the process that sent that report is still
-alive, so a Luma that died in front doesn't keep Menu from the inbox.
+## T3 Code's web app
 
-The inbox is `InboxActivity`, a translucent activity in its own task in
-Luma's main process. Its WebView loads Luma's bundle with `#inbox`, which
-draws only the inbox panel over a transparent page, and shares the pairing
-with MainActivity through localStorage. Back or Menu closes it and the app
-underneath is in front again. OK on a thread opens it in T3 Code's web app,
-in Luma's task, where an open T3 Code takes the thread; Back from there
-returns to Luma, not to the app the inbox opened over. If T3 Code's session
-has expired, the web app hands the thread's URL to MainActivity, whose page
-pairs again and reopens that thread, starting first if it wasn't running.
+Open on an agent shows its thread in T3 Code's own web app (`WebAppActivity`, with
+`assets/t3/tv.{css,js}` injected for the remote). Luma mints a one-time code with its
+token for the server's `/pair` page, then goes on to the thread, and remembers which
+origin already has a session (`files/t3-web-origin`). If the web app's session is gone,
+tv.js calls `LumaWeb.repair()`: MainActivity keeps the target, and Luma pairs it again
+and reopens it, at most once in 30 seconds.
 
-The activity finishes as soon as anything else comes to the front, so no
-second Luma WebView stays alive on a 1 GB stick. If the system took Luma's
-main process, the inbox starts it again, which takes 1–2 seconds, and the
-list fills in once the connection to T3 Code is up. Some apps pause their
-video while the inbox is on top.
+Force-stopping Luma also turns HomeGuard off (Android removes it from the enabled
+services); enable it again with the commands above.
 
-`adb shell input keyevent` injects keys after the accessibility key filter,
-so it can't test this. Send the remote's own input events instead, for
-example Menu on the stick Luma is tested on (AFTSS, where `amzkeyboard` is `/dev/input/event4`
-there; `adb shell getevent -pl` lists the devices):
+## Not yet native
 
-```sh
-adb shell 'sendevent /dev/input/event4 1 139 1; sendevent /dev/input/event4 0 0 0;
-  sendevent /dev/input/event4 1 139 0; sendevent /dev/input/event4 0 0 0'
-```
-
-### After updating from a build without the Menu filter
-
-Android keeps an enabled service's old capabilities across `adb install -r`.
-HomeGuard stays on but can't filter keys, so Menu over other apps does
-nothing. `adb shell dumpsys accessibility` then shows `capabilities=1`
-instead of `9`. Turn HomeGuard off and on again once:
-
-```sh
-adb shell settings put secure enabled_accessibility_services '""'
-adb shell settings put secure enabled_accessibility_services \
-  com.luma.launcher/app.luma.firetv.HomeGuard
-adb shell settings put secure accessibility_enabled 1
-```
-
-Later updates keep the new capabilities.
-
-## TODO
-
-- [x] Return to Luma from apps, Home and boot (`HomeGuard`)
-- [x] WebView shell project (Java, `platforms/firetv/android/`)
-- [x] `adb connect <stick-ip> && adb install` deployment
+- Luma's own conversation view; Open uses T3 Code's web app.

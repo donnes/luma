@@ -4,13 +4,17 @@
   "printWidth": 100,
   "trailingComma": "all",
   "sortPackageJson": false,
+  "overrides": [{ "files": ["tv/*.cjs"], "options": { "trailingComma": "none" } }],
   "ignorePatterns": [
+    "**/.changeset/**",
+    ".agents/skills/**",
     "node_modules/**",
     "dist/**",
     ".build/**",
-    "test-results/**",
-    "playwright-report/**",
+    "target/**",
     "pnpm-lock.yaml",
-    "public/fonts/**"
+    "assets/fonts/**",
+    "assets/licenses/**",
+    "assets/ui-icons/**"
   ]
 }

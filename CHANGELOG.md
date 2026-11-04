@@ -1,0 +1,369 @@
+# lg-luma
+
+## 2.16.2
+
+### Patch Changes
+
+- c635023: Fix rectangular seams around installed app icons when favorite cards fade at the screen edges.
+
+## 2.16.1
+
+### Patch Changes
+
+- 652d8e7: Choose black or white favorite hearts for contrast against the card background, without a circular backing.
+- 33f78cc: Refresh HDMI cable and signal status while Home or input settings are visible, without reloading apps or losing the last valid status on read failures. Preserve the existing cable-based Auto visibility and `hdmiPlugIn` priority, and show No signal when a connected cable has no signal.
+- 161a9a3: Replace TV-side Node helpers with a bounded native Rust helper and synchronize splash images directly from privileged Home processes.
+
+## 2.16.0
+
+### Minor Changes
+
+- c47548c: Add an on/off gradient toggle beside the background rotation control, with the choice saved across launches.
+
+### Patch Changes
+
+- c667091: Keep favorite hearts visible on light app artwork with a dark circular backing in the app grid and options preview.
+
+## 2.15.3
+
+### Patch Changes
+
+- 166060e: Use consistent chevron spacing in settings breadcrumbs and highlight only the final item.
+
+## 2.15.2
+
+### Patch Changes
+
+- 7ee2a7e: Fix in-app updates failing before installation because systemd expanded variables in the installer script.
+
+## 2.15.1
+
+### Patch Changes
+
+- 3d881a2: Add Swedish (`sv`) translation: full `messages.json` catalog and locale registration, including localized date formatting. The bundled Inter subset already covers å, ä and ö.
+
+## 2.15.0
+
+### Minor Changes
+
+- a2580d9: Install verified Luma releases from the existing Settings → System update card, with download/install progress and retry after failure. Installation uses Homebrew Channel's root service and a detached systemd unit, persists outcomes across restarts, and refreshes Home takeover with recovery on failure. Desktop and scripted previews cannot install updates.
+
+### Patch Changes
+
+- ad3bb27: Add date widget visibility and localized or numeric date formats. Remove the greeting's empty space when hidden so weather moves directly below the date.
+
+## 2.14.0
+
+### Minor Changes
+
+- 3b610ec: Add a Show on Home toggle under Widgets → Greeting to hide the greeting without clearing its saved
+  name or hiding the date and weather. Existing installations keep the greeting enabled.
+- 3b610ec: Check the official release feed in the background on TV startup and show an Update available notice
+  and System settings card for newer versions. Open Homebrew Channel from the card to update safely
+  through the existing installer. Offline failures are non-disruptive and desktop tests stay offline.
+- 3b610ec: Consolidate the System version and update information into one status card. Show up-to-date status
+  after a successful check, with Check again, checking and retryable failure states. Keep the Homebrew
+  Channel CTA for available updates and support up-to-date previews with the current version.
+
+### Patch Changes
+
+- 3b610ec: Remove the Apps page's top clipping and edge fade so cards scroll behind the fixed navigation.
+  Keep categories, search and their clear controls fixed above the scrolling grid, with protected
+  pointer interaction and remote focus visibility.
+- 3b610ec: Give app categories pill surfaces matching search, with larger, heavier category and search labels.
+- 3b610ec: Place background Upload left of Rotation with matching remote navigation. Enlarge app captions
+  on Home and Apps and increase their weight, retaining space for wrapped names.
+- 3b610ec: Enable live update checks and Check again in interactive desktop runs using the same endpoint as
+  TV. Keep scripted captures and simulated-version previews offline.
+- 3b610ec: Move Greeting's visibility toggle to the first row and label it Show widget, matching Weather.
+- 3b610ec: Enlarge the clock, Home weekday/date and input descriptions for better TV readability.
+- 3b610ec: Refresh the Homebrew Channel listing to describe uploaded backgrounds, rotation, QR-managed webhook
+  shortcuts and current customization options.
+- 3b610ec: Update the Homebrew Channel description to list all supported languages and add regression coverage
+  to keep future language additions reflected in release metadata.
+- 3b610ec: Place Language above Reduced motion, sort language choices alphabetically by their displayed names,
+  and show a readable empty-state card when no shortcuts are saved.
+- 3b610ec: Let Settings lists scroll behind fixed navigation, sidebar and background actions without viewport
+  clipping or edge fades. Preserve fixed-control pointer priority and remote focus visibility.
+- 3b610ec: Increase version and shortcut row opacity, match shortcut description cards to HDMI settings rows,
+  and make shortcut removal buttons circular.
+- 3b610ec: Simplify the shortcut empty-state hint to explain that Configure adds the first shortcut.
+- 3b610ec: Open shortcut test/removal actions in a popup from selectable Settings rows, lighten the System
+  version surface, and refine category focus/active styling with a full-height clear button.
+- 3b610ec: Reduce Languages and Backgrounds bottom scroll padding from 64 to 48 logical pixels.
+- 3b610ec: Add Traditional Chinese (繁體中文) immediately after Simplified Chinese, with translated interface
+  text, persisted language selection, Chinese date/time formatting and verified bundled glyph coverage.
+  Update Homebrew metadata and use the provider's Chinese locale for geocoding.
+- 3b610ec: Enlarge the TV Settings button to 60px and center it alongside the top navigation bar.
+- 3b610ec: Add --test-update-version and LUMA_TEST_UPDATE_VERSION to preview the update card without contacting
+  GitHub or persisting simulated update metadata.
+  Display the running binary's version rather than a potentially stale generated-artwork version.
+
+## 2.13.0
+
+### Minor Changes
+
+- 13211ee: Add shortcut tiles that send a GET or POST request instead of launching an app, for example to a
+  Home Assistant webhook. Create, edit, test and remove them in Settings › Shortcuts, or scan a QR
+  code there to edit them on a phone or computer instead of with the remote.
+- ffcf8ed: Group Greeting, Weather, Shortcuts and Inputs under Settings → Widgets. Create and edit shortcuts
+  through Configure's phone/computer QR page, with passive shortcut rows and separate TV removal
+  buttons. Preserve existing preferences, increase Settings list bottom spacing and use a flat
+  background on the shortcut web page.
+
+### Patch Changes
+
+- 61b673d: Focus the rotation button when pressing Right from the Background settings sidebar instead of the active background.
+- 61b673d: Remove excess right padding from the Upload button by sizing it to its localized label.
+- 61b673d: Keep the background upload modal and session open when the desktop preview loses focus, so switching to a browser does not interrupt uploads. TV focus-loss and window hiding behavior are unchanged.
+- 61b673d: Remove the background gradient from the wallpaper upload page for a flat dark appearance.
+- 13211ee: Keep shortcut context-menu actions on the webhook path, prevent platform app deletion of shortcuts,
+  and preserve accepted phone-editor changes when its dialog is reopened before pending saves are applied.
+- 61b673d: Shorten the Background settings upload button label to “Upload” in every language.
+
+## 2.12.0
+
+### Minor Changes
+
+- efb6f3b: Return to Luma's Home tab when the remote Home button relaunches an existing Home-takeover instance, dismissing overlays and preserving keyboard edits. Normal-tile launches retain LG's system Home-button behavior.
+- 8430690: Add a Rotation On/Off button beside the upload action, defaulting to Off with a crossed-out rotation icon. When enabled, all available backgrounds advance on each Luma restart and every 15 minutes, with a slow cross-fade while preserving the manually chosen LG splash (#96).
+
+### Patch Changes
+
+- cb47502: Allow an explicit fullhome takeover target, preserve its native lifecycle identity, and distinguish mount status from Home-key verification.
+- 1abd414: Handle the remote Home key directly while Luma runs as the Home replacement, returning from Apps, Settings and overlays even when webOS does not send a lifecycle relaunch for an already-foreground Home. Normal app-tile launches retain system Home-key routing.
+
+## 2.11.0
+
+### Minor Changes
+
+- 90aa848: Upload named custom wallpapers from a phone or computer using a temporary local URL and QR code in Background settings. Preview and adjust a 16:9 crop before adding it to the TV's persistent wallpaper gallery.
+- 90aa848: Add app-style side popups for backgrounds, with selection and confirmed deletion of any background except the active one. Persist removal of bundled backgrounds from the gallery and delete uploaded files on the wallpaper worker.
+
+### Patch Changes
+
+- 90aa848: Balance background upload button and dialog padding, and make the non-interactive System version row more transparent.
+- 90aa848: Separate QR and browser instructions in the background upload dialog, simplify the displayed URL, and remind users to keep the dialog open during upload.
+- 90aa848: Place the background upload action in a compact, right-aligned button above the gallery.
+- 90aa848: Complete Vietnamese and Dutch translations for background selection, deletion, and upload messages.
+- 148d4eb: Add Dutch (`nl`) translation: full `messages.json` catalog and locale registration in `i18n.rs` (language list, display name and localized date formatting such as « WOENSDAG 21 OKTOBER »). The bundled Inter subset already covers Dutch, so no font changes are needed.
+- 90aa848: Scroll only the background gallery while keeping the settings sidebar and upload button fixed. Clip gallery drawing and pointer targets below the upload action and keep remote-focused cards fully visible.
+- 90aa848: Make the background upload URL larger and heavier for easier reading on TV.
+- 90aa848: Display the System version in a full-width, non-interactive settings row with clearer text.
+- 90aa848: Rename the background upload button and dialog title to “Upload background” across all languages.
+
+## 2.10.3
+
+### Patch Changes
+
+- df0f4bb: Scale long Home greetings down to fit their existing single-line area without cropping names or moving weather and favorites. Keep LG's system keyboard and its existing name-entry behavior unchanged.
+- 49df652: Add Vietnamese (`vi`) translation: full `messages.json` catalog, locale registration in `i18n.rs` (language list, display name, and localized date formatting), and Latin Extended Additional (U+1EA0-1EF9) glyphs in the bundled Inter font so Vietnamese letters no longer fall back to the CJK font.
+
+## 2.10.2
+
+### Patch Changes
+
+- 93afffa: Reuse existing app-owned preferences and weather storage when running as LG Home, preserving normal-app access after saves. Match the staged Home splash to the same saved preferences instead of a root-owned fallback.
+
+## 2.10.1
+
+### Patch Changes
+
+- 8dfa7cb: chore: trigger release
+
+## 2.10.0
+
+### Minor Changes
+
+- 157d23c: On the Apps page, open a side popup beside the selected app with a normal OK press or click, with Open first and focused by default. Home favorites continue launching directly. Add app deletion with a Cancel-focused confirmation, protecting Luma, Homebrew Channel and apps in the webOS, Palm and LG system namespaces from removal. LG's Settings and More buttons retain their system behavior.
+
+  Reconcile uncertain uninstall replies with the TV's installed-app inventory and refresh after errors so completed removals do not leave stale cards in Luma.
+
+  Use the normal appInstallService/remove endpoint through an elevated, completion-aware helper so Content Store apps can be removed instead of failing through Homebrew's developer-only removal path.
+
+### Patch Changes
+
+- 75d0a87: Transparent app icons get a gradient card in the logo's own hue with at least 3:1 contrast instead of near-black, and are scaled with premultiplied alpha so their edges no longer pick up a dark fringe.
+
+## 2.9.0
+
+### Minor Changes
+
+- a1838e6: Restore MSAA text rendering with no emboldening as the default and add Settings → System → Text rendering to choose analytic rendering. The saved choice applies when Luma next starts.
+
+### Patch Changes
+
+- 973ddf7: Add French (`fr`) translation: full `messages.json` catalog and locale registration in `i18n.rs` (language list, display name, and localized date formatting such as « MERCREDI 21 OCTOBRE » with the ordinal « 1ER » for the first day of the month). The bundled Inter subset already covers French accents and ligatures, so no font changes are needed.
+
+## 2.8.5
+
+### Patch Changes
+
+- b1dcbcf: Let LG's screen saver start while Luma is in front. SDL-webOS answers the TV's screen saver requests on Luma's behalf and declined them, because SDL suspends the screen saver unless `SDL_VIDEO_ALLOW_SCREENSAVER` allows it.
+- e353196: Add Polish (`pl`) translation: full `messages.json` catalog, locale registration in `i18n.rs` (language list, display name, and localized date formatting with genitive month names), and Latin Extended-A glyphs in the bundled Inter font so Polish letters such as ą, ę, ł, ś and ż no longer fall back to the CJK font.
+
+## 2.8.4
+
+### Patch Changes
+
+- 2a03caa: Read the app and input inventory directly from the TV when Luma runs in place of LG's Home, so an early root integration shows apps before Homebrew's service has started; other cases still use Homebrew.
+- 945598a: Retry the TV inventory while the TV service starts. Right after a cold boot or when the TV is short of memory, the Homebrew service that reads the app and input inventory can take longer than the 6.5 s Luna timeout. While no apps are shown yet, Luma now keeps loading and retries up to 5 times every 2 s before it shows the error and its Retry button.
+
+## 2.8.3
+
+### Patch Changes
+
+- 2abfbdf: Hide the updating status label while closing recent apps and refreshing history afterward, including when closing the last card. Keep loading feedback limited to the initial history read and hide it when dismissing the switcher.
+
+## 2.8.2
+
+### Patch Changes
+
+- d5f778c: Fix black or partly black screens after presses that change nothing, such as Right at the end of a row: an unchanged frame named a damage pixel outside the surface, which left `EGL_KHR_partial_update` nothing to preserve. It now names, clears and redraws one pixel inside the drawable.
+- d408d35: Add Russian (`ru`) translation: full `messages.json` catalog, locale registration in `i18n.rs` (language list, display name, and localized date formatting with genitive month names), and Cyrillic glyphs in the bundled Inter font so Russian text no longer falls back to the CJK font.
+- 5317139: Redesign Recent apps as a layered card stack with depth-aware browsing transitions. Closing a card with Up animates it off the top of the screen and brings the remaining cards forward, with a return animation if closing fails and immediate updates when reduced motion is enabled.
+
+## 2.8.1
+
+### Patch Changes
+
+- a0eddd9: Draw crisp shape edges. The paint shader's edge filter ran from 0.85 px inside a shape to its edge, so every edge had a half-covered pixel and one-pixel borders never became opaque. Coverage is now a one-pixel box filter centred on the edge, and rectangles and logo placement snap to whole drawable pixels, so straight edges stay a single step through a TV's 2x scale-up of its 1080p graphics plane.
+- 3359618: Render crisper text and logos on the TV. The webOS window is created without MSAA so text and logos use their analytic edge filters, which keep stems sharper through the panel's 2x scale-up of a 1080p graphics plane than 4x sample coverage, at the same cost. Small text is emboldened by 0.25 physical pixels per edge so thin stems get an opaque core. Desktop previews keep multisampling.
+- 7b413b0: Fold full-screen translucent fills into the wallpaper. The Recents backdrop and gradient each cost a full screen of fill per frame; the wallpaper is now drawn once with their combined effect, and during the Recents crossfade they sit beneath the outgoing interface so they fold in as well. On an LG webOS 5 TV the Recents carousel runs at 48 instead of 37 fps and opening or closing Recents drops from 100 to 63 ms at the 95th percentile.
+- 55f8b9c: Prepare the Apps and Settings pages while the screen is idle, so their first visit does not pay for text layout, new glyph outlines, logo meshes and icon uploads. On an LG webOS 5 TV the worst frame of the first Apps visit drops from 179 to 40 ms.
+- 8592248: Redraw only what changed since the back buffer's frame. Consecutive scenes are compared command by command and only the changed area is cleared and drawn, using EGL buffer age with `EGL_KHR_partial_update` where available. On an LG webOS 5 TV, focus moves on Home run at 60 instead of 39 fps at 1080p (p95 17 instead of 34 ms) and mixed navigation redraws a fifth of the screen on average.
+- 32086d9: Stop the launch splash update failing when Luma is Home on webOS 5 and 6. The executable takeover method stages no Home app copy, so the update now leaves out the staged splash and only refreshes the normal tile's splash.
+
+## 2.8.0
+
+### Minor Changes
+
+- af18b35: Register the Home takeover with SAM on webOS 25/26, so the Home key can relaunch the running Luma instead of SAM killing and restarting it. LG's Home role there is app-ID based, so Luma cannot register on its own connection; as root it holds the registration through `luna-send -a com.webos.app.home` with lifecycle v1 (`registerNativeApp`), without delaying startup. The helper ends with Luma. A registration SAM never accepts leaves the previous behaviour; one that is lost later quits Luma so SAM starts Home afresh. If a relaunch does not bring Luma to the front within 3 s, Luma turns registration off with `/var/lib/luma-home/no-lifecycle` and restarts. Relaunch now also restores and shows the window before raising it, and the staged Home logs to `/tmp/luma-home.log`.
+
+### Patch Changes
+
+- 9f3fa1f: Draw square images, above all the full-screen wallpaper, through the paint shader's plain texture path instead of the rounded-rectangle distance field. On an LG webOS 5 TV the Home scene renders at 37.5 instead of 29 fps at 1080p.
+
+## 2.7.0
+
+### Minor Changes
+
+- 9b38438: Support running in place of LG's Home executable on webOS 5, where a root integration bind-mounts Luma over `/usr/bin/com.webos.app.home`. Luma then registers with SAM itself through lifecycle v2, so Home launches bring the running instance back instead of restarting it. Production and developer installations are supported by pre-start library search paths and native package discovery that matches the mounted executable, keeping assets and splash updates tied to its source installation. Registration failures are reported at startup, a lost registration quits so SAM can start Home afresh, and a panic in a subscription handler no longer unwinds into LS2.
+- c6dd60f: Support `home.sh enable` on webOS 5 and 6. There, SAM cannot reread a mounted Home manifest, so the takeover bind-mounts Luma's executable over LG's Home executable instead, keeps LG's manifest and role, and relies on Luma's own lifecycle registration. Enabling, the cold-boot hook, status and restoring LG Home work as on webOS 25/26; a failed launch restores LG Home, package updates are remounted, and a normal tile launch opens the running Home instance.
+
+## 2.6.0
+
+### Minor Changes
+
+- e2b5531: Let the Home favourites row run to the screen edges like Apple TV's rows: tiles are slightly narrower (256 px) so six show in full while the seventh peeks in and fades out at the right edge, and once the row scrolls the left edge fades in. The visible edge fragments support pointer selection and horizontal wheel scrolling without moving clicked targets. A new horizontal edge fade joins the vertical one in the paint, vector and text shaders. The strip still ends after the sixth tile, so a focused tile never sits in the fade.
+
+### Patch Changes
+
+- 2ed5213: Decode every installed app icon in the background right after the app inventory loads, so the Apps page opens with its artwork ready. Prefetched icons are fed to the artwork worker a few at a time through their own list. Visible cards take priority over queued background work, including when a prefetched icon becomes visible, while request queues and decoded caches stay bounded.
+
+## 2.5.0
+
+### Minor Changes
+
+- 1cc543f: Simplify Recents to bare app cards: remove app captions, close buttons and the empty-state subtitle. Close the focused app directly with Up. Make the overlay more transparent and add a restrained, reversible crossfade between the switcher and its parent screen, with immediate input restoration and reduced-motion support.
+- 1cc543f: Add an Apple TV–inspired recent-app switcher, opened by holding Back for 600 ms or selecting the new header shortcut. Browse the TV's actual recent history, launch an app, close one card, or use LG's own Close all operation. Keep motion restrained, support reduced motion and pointer navigation, and load available recent-card artwork off the UI thread. Include a labeled, isolated desktop preview.
+- 1cc543f: Open Recents with a short Back press on Home and keep long-Back access from other pages. Remove the header shortcut, card counter and instructions, and move a more compact Close all button to the top-right. Reuse the Apps card renderer for consistent vector logos, installed icons and surfaces, fixing mismatched YouTube artwork in Recents.
+
+### Patch Changes
+
+- e084e94: Remove the desktop preview label from the recent-app switcher.
+- 1cc543f: Fix native remote Back dismissal and long-Back handling in the app switcher. Preserve SDL-webOS Back/Exit scancodes, claim the Magic Remote's long-Back Exit key, and consume dismissal presses through release so they cannot also quit Luma. Remove the switcher's heading and subtitle for a quieter card-only layout.
+
+## 2.4.0
+
+### Minor Changes
+
+- df483bf: Add Italian (`it`) translation: full `messages.json` catalog, plus locale registration in `i18n.rs` (language list, display name, and localized date formatting).
+- 395cdac: Add curated vector cards for NRK TV and TV 2 Play, with exact app-ID matching, card colours, and desktop demo support.
+
+### Patch Changes
+
+- 5b5c4a3: Recognize Apple Music's verified `com.apple.applemusic` app ID so the installed TV app uses its curated vector card.
+  Match the Apple Music card's dark background gradient to Apple TV.
+
+## 2.3.1
+
+### Patch Changes
+
+- db4fece: Fix Home takeover enable failing with "no app matched by pid" by closing the normal Luma instance through the app-ID endpoint. Allow takeover to continue if that instance already exited during the close request.
+- db4fece: Update the normal app launch splash to match the saved background, including after changing it in Settings. Refresh the matching Home takeover splash as well.
+
+## 2.3.0
+
+### Minor Changes
+
+- 3bf0ad6: Show a wallpaper splash at launch and match the saved background when staging the native Home integration.
+
+## 2.2.2
+
+### Patch Changes
+
+- 072b7e9: Show installed app icons as soon as they are decoded instead of one per idle wake-up.
+- fed795c: Keep decoded app icons across the automatic inventory refreshes at startup and whenever Luma becomes visible, reading an icon again only when its app's version or icon paths change. Refresh apps still reloads every icon.
+- 969a6fd: Keep the neutral card colour for transparent app icons whose logo reaches the edges, instead of filling the card with the logo's own colour.
+
+## 2.2.1
+
+### Patch Changes
+
+- d81cb66: Publish the changes from the unreleased 2.2.0 version after improving CI dependency installation and build timeouts.
+
+## 2.2.0
+
+### Minor Changes
+
+- 201c030: Add an optional seconds display to the header clock, configurable with the remote in Clock format settings.
+- e8f9085: Add 27 curated vector logos for streaming, music, and regional TV apps, including NOW / Now TV, plus dedicated Live TV and browser vector cards. Select branded cards by exact app IDs instead of keywords, so unrelated apps such as Amazon Alexa retain their installed artwork. Include every SVG-backed app in the desktop demo and add a rendered gallery preview.
+
+  Remove dumped TV artwork, icon/colour maps, and their collection tools and tests. Desktop previews now use curated vectors or generic/category fallbacks, and builds no longer depend on collected icon fixtures.
+
+- 589044b: Add custom input names: rename any input with the remote in Settings → Inputs, or reset it to the
+  port name. Home cards, settings rows and the breadcrumb show the custom name, keeping the TV label,
+  port and connection status as detail.
+- 978b946: Discover app icons directly from installed TV applications instead of requiring collected artwork and icon-map updates. Load visible artwork in the background, derive matching card colours automatically, and refresh cached icons with app inventory. Exclude desktop-only collected icons and maps from TV packages.
+- 9463b56: Add an optional name to the Home greeting, with remote-friendly name replacement and reset controls.
+- e2c2a12: Add separate Home and Apps caption settings, with names hidden on Home and visible in Apps by default.
+  Legacy caption settings do not override the new per-view defaults.
+  Group greeting name editing under Greeting, use Clear name for greeting and input names, and reserve
+  the bright settings-row highlight for the focused control.
+
+  Group clock preferences under Clock, with separate nested Clock format and Time format selections.
+  Time format offers HH:MM by default or HH:MM:SS while retaining existing saved seconds preferences.
+  Move Refresh apps & inputs and Quit app into a dedicated System sidebar category.
+  Keep the top-level Clock row free of format values and remove the chevron from input Rename actions.
+
+### Patch Changes
+
+- dcf1b03: Read the real HDMI cable state from `hdmiPlugIn` on TVs that report every port as `connected`, so
+  inputs in Auto mode only appear when a device is actually plugged in.
+
+## 2.1.0
+
+### Minor Changes
+
+- d417291: Add Brazilian Portuguese as a selectable interface language, including translated app labels,
+  localized dates and weather location searches.
+
+### Patch Changes
+
+- 27802ac: Match brand keywords at ASCII word boundaries so unrelated apps such as dashboards retain their
+  own artwork and Utilities category instead of being mistaken for ARD/Das Erste.
+- 14b18f8: Render Korean app and input names using bundled Hangul font subsets loaded on demand. Add
+  Korean-labelled LG Gallery and Room Connect apps to the desktop preview inventory.
+- 3e256f6: Add installed-app artwork collected from an LG C1 for Korean-market apps, with matching card
+  background colours. Make icon collection work on older webOS Node versions and follow the
+  launcher's app visibility and exclusion rules.
+
+  Include Coupang Play, Watcha Play, Wavve, Rainbow TV and LG TV VOD in the desktop demo inventory
+  so their artwork can be previewed during development.
+
+- ee2f6ff: Coordinate app releases through Changesets with synchronized Rust and webOS versions, publishing
+  only after the checked Version Packages PR is merged.
+
+  Add updating PR comments that report missing changesets and explain semantic version bumps for
+  code changes.

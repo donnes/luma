@@ -1,17 +1,18 @@
-#!/usr/bin/env node
-// Build the Android TV / Fire TV WebView shell APK without Gradle:
-//   aapt2 compile/link (manifest + launcher art + dist/app as assets) →
-//   javac --release 8 → d8 → zip classes.dex → zipalign → apksigner →
-//   platforms/firetv/luma.apk
+// Build the Fire TV / Android TV APK without Gradle. Luma is the native Rust
+// launcher, run by SDL in an SDLActivity:
+//   SDL2 (pinned source, NDK CMake) → libSDL2.so
+//   cargo (platforms/firetv/native, armv7-linux-androideabi) → libmain.so
+//   aapt2 compile/link (manifest, launcher art, .build/assets as assets/luma)
+//   → javac --release 8 (shell + SDL's Java) → d8 → zip dex and libs
+//   → zipalign → apksigner → platforms/firetv/luma.apk
 //
 // Requirements (one-time):
-//   ANDROID_HOME pointing at an SDK with build-tools 34 and platform
-//   android-34, e.g. via cmdline-tools:
-//     sdkmanager "build-tools;34.0.0" "platforms;android-34"
-//   JDK 17–21 recommended (JDK 25+ needs LUMA_JAVA_RELEASE=8+ and patience).
+//   ANDROID_HOME pointing at an SDK with build-tools 34+, platform android-34+,
+//   an NDK (sdkmanager "ndk;27.1.12297006") and CMake ("cmake;3.22.1").
+//   rustup target add armv7-linux-androideabi
+//   pkg-config, and JDK 17–21 (JDK 25+ needs LUMA_JAVA_RELEASE=8+).
 //
-// Usage: pnpm build && node platforms/firetv/build.mjs
-
+// Usage: pnpm assets && node platforms/firetv/build.mjs
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -20,8 +21,9 @@ import { spawnSync } from 'node:child_process';
 import sharp from 'sharp';
 
 const root = path.resolve(import.meta.dirname, '..', '..');
-const app = path.join(root, 'dist', 'app');
-const build = path.join(root, 'dist', 'firetv');
+const assets = path.join(root, '.build', 'assets');
+const cache = path.join(root, '.build', 'firetv');
+const build = path.join(cache, 'apk');
 const out = path.join(root, 'platforms', 'firetv', 'luma.apk');
 
 const die = (message) => {
@@ -102,25 +104,128 @@ const androidJar = path.join(sdk, 'platforms', platform, 'android.jar');
 if (!fs.existsSync(androidJar)) die(`android.jar missing for ${platform}.`);
 if (platform !== 'android-34') console.log(`warning: compiling against ${platform}`);
 
-// --- Bundle the web app -------------------------------------------------------
+// --- SDL2 for Android ---------------------------------------------------------
 
-if (!fs.existsSync(path.join(app, 'index.html'))) {
-  console.log('dist/app is missing; running `pnpm build` first…');
-  exe('pnpm', ['build'], { stdio: 'inherit', cwd: root });
+// The same SDL release upstream pins for webOS (tools/webos-runtime.mjs).
+const sdlVersion = '2.30.12';
+const sdlArchive = `SDL2-${sdlVersion}.tar.gz`;
+const sdlSha256 = 'ac356ea55e8b9dd0b2d1fa27da40ef7e238267ccf9324704850d5d47375b48ea';
+const abi = 'armeabi-v7a';
+const target = 'armv7-linux-androideabi';
+const minApi = '21';
+
+const newest = (dir) =>
+  fs.existsSync(dir)
+    ? fs
+        .readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort(byVersion)
+        .at(-1)
+    : undefined;
+const ndk =
+  expand(process.env.ANDROID_NDK_HOME || '') ||
+  (newest(path.join(sdk, 'ndk')) && path.join(sdk, 'ndk', newest(path.join(sdk, 'ndk'))));
+if (!ndk || !fs.existsSync(ndk)) die('No NDK found; install one (sdkmanager "ndk;27.1.12297006").');
+const cmakeVersion = newest(path.join(sdk, 'cmake'));
+if (!cmakeVersion) die('No CMake found in the SDK (sdkmanager "cmake;3.22.1").');
+const cmakeBin = path.join(sdk, 'cmake', cmakeVersion, 'bin');
+const host = { darwin: 'darwin-x86_64', linux: 'linux-x86_64' }[process.platform];
+if (!host) die(`Unsupported build host ${process.platform}.`);
+const toolchain = path.join(ndk, 'toolchains', 'llvm', 'prebuilt', host, 'bin');
+const clang = path.join(toolchain, `armv7a-linux-androideabi${minApi}-clang`);
+
+fs.mkdirSync(cache, { recursive: true });
+const archive = path.join(cache, sdlArchive);
+if (!fs.existsSync(archive)) {
+  exe('curl', [
+    '-fsSL',
+    '-o',
+    archive,
+    `https://github.com/libsdl-org/SDL/releases/download/release-${sdlVersion}/${sdlArchive}`,
+  ]);
+}
+const archiveSha = crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex');
+if (archiveSha !== sdlSha256) {
+  fs.rmSync(archive);
+  die(`${sdlArchive} has SHA-256 ${archiveSha}, expected ${sdlSha256}; removed it.`);
+}
+const sdlSource = path.join(cache, `SDL2-${sdlVersion}`);
+if (!fs.existsSync(sdlSource)) exe('tar', ['-xzf', archive, '-C', cache]);
+const sdlBuild = path.join(cache, `sdl-${abi}`);
+const libSDL = path.join(sdlBuild, 'libSDL2.so');
+if (!fs.existsSync(libSDL)) {
+  exe(path.join(cmakeBin, 'cmake'), [
+    '-S',
+    sdlSource,
+    '-B',
+    sdlBuild,
+    '-G',
+    'Ninja',
+    `-DCMAKE_MAKE_PROGRAM=${path.join(cmakeBin, 'ninja')}`,
+    `-DCMAKE_TOOLCHAIN_FILE=${path.join(ndk, 'build/cmake/android.toolchain.cmake')}`,
+    `-DANDROID_ABI=${abi}`,
+    `-DANDROID_PLATFORM=android-${minApi}`,
+    '-DCMAKE_BUILD_TYPE=Release',
+    '-DSDL_SHARED=ON',
+    '-DSDL_STATIC=OFF',
+    '-DSDL_TEST=OFF',
+  ]);
+  exe(path.join(cmakeBin, 'ninja'), ['-C', sdlBuild]);
+}
+
+// --- Luma as libmain.so -------------------------------------------------------
+
+const nativeCrate = path.join(root, 'platforms/firetv/native');
+const versionOf = (manifest) =>
+  /^version = "([^"]+)"/m.exec(fs.readFileSync(manifest, 'utf8'))?.[1];
+const version = versionOf(path.join(root, 'Cargo.toml'));
+if (versionOf(path.join(nativeCrate, 'Cargo.toml')) !== version) {
+  die(`platforms/firetv/native/Cargo.toml must use the root package's version ${version}.`);
+}
+// sdl2-sys asks pkg-config for SDL; point it at the Android build alone.
+const pkgconfig = path.join(cache, 'pkgconfig');
+fs.mkdirSync(pkgconfig, { recursive: true });
+fs.writeFileSync(
+  path.join(pkgconfig, 'sdl2.pc'),
+  `Name: sdl2\nDescription: SDL2 for Android ${abi}\nVersion: ${sdlVersion}\n` +
+    `Libs: -L${sdlBuild} -lSDL2\nCflags:\n`,
+);
+const targetEnv = target.replaceAll('-', '_');
+exe('cargo', ['build', '--locked', '--release', '--target', target], {
+  cwd: nativeCrate,
+  env: {
+    ...process.env,
+    [`CC_${targetEnv}`]: clang,
+    [`AR_${targetEnv}`]: path.join(toolchain, 'llvm-ar'),
+    [`CARGO_TARGET_${targetEnv.toUpperCase()}_LINKER`]: clang,
+    PKG_CONFIG_ALLOW_CROSS: '1',
+    PKG_CONFIG_PATH: '',
+    PKG_CONFIG_LIBDIR: pkgconfig,
+  },
+});
+const libMain = path.join(nativeCrate, 'target', target, 'release', 'libmain.so');
+
+// --- Stage assets, resources and native libraries ------------------------------
+
+if (!fs.existsSync(path.join(assets, 'font.ttf'))) {
+  die('.build/assets is missing; run `pnpm assets` first.');
 }
 
 fs.rmSync(build, { recursive: true, force: true });
 for (const dir of [
-  path.join(build, 'assets', 'app'),
+  path.join(build, 'assets'),
   path.join(build, 'gen', 'java'),
   path.join(build, 'gen', 'res', 'drawable'),
   path.join(build, 'classes'),
   path.join(build, 'dex'),
+  path.join(build, 'native', 'lib', abi),
 ]) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
-fs.cpSync(app, path.join(build, 'assets', 'app'), { recursive: true });
+// MainActivity unpacks assets/luma to app storage, where Luma reads it as --assets.
+fs.cpSync(assets, path.join(build, 'assets', 'luma'), { recursive: true });
 // Shell-owned assets, such as the T3 Code web client's TV injection.
 fs.cpSync(path.join(root, 'platforms/firetv/android/assets'), path.join(build, 'assets'), {
   recursive: true,
@@ -129,10 +234,12 @@ fs.cpSync(path.join(root, 'platforms/firetv/android/assets'), path.join(build, '
 fs.cpSync(path.join(root, 'platforms/firetv/android/res'), path.join(build, 'gen', 'res'), {
   recursive: true,
 });
+fs.copyFileSync(libSDL, path.join(build, 'native', 'lib', abi, 'libSDL2.so'));
+fs.copyFileSync(libMain, path.join(build, 'native', 'lib', abi, 'libmain.so'));
 
 // --- Launcher art (no committed binaries; sharp ships with the repo) ----------
 
-const icon = path.join(root, 'public', 'app-icon.svg');
+const icon = path.join(root, 'assets', 'app-icon.svg');
 await sharp(icon)
   .resize(192, 192)
   .png()
@@ -165,7 +272,7 @@ exe(aapt2, [
   '--custom-package',
   'app.luma.firetv',
   '--min-sdk-version',
-  '21',
+  minApi,
   '--target-sdk-version',
   '34',
   '-A',
@@ -177,7 +284,12 @@ exe(aapt2, [
 
 const javaDir = path.join(root, 'platforms/firetv/android/java');
 const generatedJava = path.join(build, 'gen/java');
-const sources = [...(fs.existsSync(generatedJava) ? walk(generatedJava) : []), ...walk(javaDir)];
+const sdlJava = path.join(sdlSource, 'android-project/app/src/main/java');
+const sources = [
+  ...(fs.existsSync(generatedJava) ? walk(generatedJava) : []),
+  ...walk(javaDir),
+  ...walk(sdlJava),
+];
 const release = process.env.LUMA_JAVA_RELEASE ?? '8';
 exe('javac', [
   '--release',
@@ -194,7 +306,7 @@ exe('javac', [
 exe(d8, [
   '--release',
   '--min-api',
-  '21',
+  minApi,
   '--lib',
   androidJar,
   '--output',
@@ -207,6 +319,7 @@ exe(d8, [
 const unsigned = path.join(build, 'unsigned.apk');
 fs.copyFileSync(baseApk, unsigned);
 exe('zip', ['-q', '-j', unsigned, path.join(build, 'dex/classes.dex')]);
+exe('zip', ['-q', '-r', unsigned, 'lib'], { cwd: path.join(build, 'native') });
 
 const aligned = path.join(build, 'aligned.apk');
 exe(zipalign, ['-f', '-p', '4', unsigned, aligned]);

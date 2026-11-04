@@ -1,4 +1,4 @@
-import { pair, PairingError } from '../../../src/agents/pairing.ts';
+import { pair, PairingError } from './agents/pairing.ts';
 import { createAssistant } from './assistant.ts';
 import {
   configDir,

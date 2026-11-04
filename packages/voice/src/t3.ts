@@ -1,4 +1,4 @@
-import { dispatchCommand, type Command } from '../../../src/agents/commands.ts';
+import { dispatchCommand, type Command } from './agents/commands.ts';
 import {
   applyShellItem,
   applyThreadItem,
@@ -6,15 +6,10 @@ import {
   emptyShell,
   type Shell,
   type ThreadDetail,
-} from '../../../src/agents/model.ts';
-import {
-  PairingError,
-  socketUrl,
-  websocketTicket,
-  type Pairing,
-} from '../../../src/agents/pairing.ts';
-import { RpcError, RpcSocket } from '../../../src/agents/rpc.ts';
-import type { ShellStreamItem, ThreadStreamItem } from '../../../src/agents/types.ts';
+} from './agents/model.ts';
+import { PairingError, socketUrl, websocketTicket, type Pairing } from './agents/pairing.ts';
+import { RpcError, RpcSocket } from './agents/rpc.ts';
+import type { ShellStreamItem, ThreadStreamItem } from './agents/types.ts';
 
 // One short-lived connection per voice request: ask, act, hang up. The
 // service runs next to T3 Code, so there's no route juggling like on the TV.

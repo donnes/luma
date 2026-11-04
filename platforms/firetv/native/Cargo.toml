@@ -1,0 +1,52 @@
+# Builds the launcher in ../../../src as SDL's libmain.so for the Fire TV APK.
+# It's its own workspace so the root workspace and lock file stay upstream's.
+# Dependencies match the root package; build.mjs checks that the versions agree.
+[package]
+name = "luma"
+version = "2.16.2"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+license = "MIT"
+
+[workspace]
+
+[lib]
+name = "main"
+path = "../../../src/main.rs"
+crate-type = ["cdylib"]
+
+[features]
+# Declared so the shared source's webOS gates stay known; never enabled here.
+webos = []
+
+[dependencies]
+luma-tv-helper = { path = "../../../tv-helper" }
+getrandom = "0.2"
+gl = "0.14"
+if-addrs = "0.14"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+jni = "0.21"
+libc = "0.2"
+luma-vector-geometry = { path = "../../../vector-geometry" }
+owned_ttf_parser = "0.25"
+qrcodegen = "1.8"
+ring = "0.17"
+# The T3 Code WebSocket; TLS through the same rustls and ring ureq uses.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+sdl2 = { version = "0.38", features = ["use-pkgconfig"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+time = { version = "0.3", features = ["local-offset", "formatting", "parsing"] }
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
+ureq = { version = "3.4", default-features = false, features = ["rustls"] }
+webpki-roots = "1"
+
+# The library never calls the desktop main(); the root crate's own lint run covers dead code.
+[lints.rust]
+dead_code = "allow"
+
+[profile.release]
+lto = "thin"
+strip = true
+codegen-units = 1

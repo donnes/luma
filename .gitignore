@@ -1,17 +1,15 @@
 node_modules/
 dist/
 .build/
-test-results/
-playwright-report/
 .DS_Store
 *.key
 *.idsig
 # Built binaries and signing artifacts
 *.apk
 *.aab
-*.wgt
 *.ipk
 *.jks
 *.keystore
 .env
 .env.*
+target/

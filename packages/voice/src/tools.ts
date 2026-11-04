@@ -1,9 +1,4 @@
-import {
-  answerCommand,
-  decideCommand,
-  messageCommand,
-  type Command,
-} from '../../../src/agents/commands.ts';
+import { answerCommand, decideCommand, messageCommand, type Command } from './agents/commands.ts';
 import {
   agentStatus,
   answerValue,
@@ -13,9 +8,9 @@ import {
   summary,
   type Agent,
   type Shell,
-} from '../../../src/agents/model.ts';
-import type { ThreadShell } from '../../../src/agents/types.ts';
-import { RpcError } from '../../../src/agents/rpc.ts';
+} from './agents/model.ts';
+import type { ThreadShell } from './agents/types.ts';
+import { RpcError } from './agents/rpc.ts';
 import type { T3Session } from './t3.ts';
 
 // The only things the assistant can do. Each tool returns JSON for the model

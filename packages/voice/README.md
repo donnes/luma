@@ -108,4 +108,4 @@ Try "What needs me?", then "Tell the login thread to use the new token flow", an
 
 ## How it works
 
-`src/main.ts` holds the commands. `server.ts` checks the token and reads the request. `assistant.ts` keeps the last few turns for three minutes, so "yes" and "the second one" make sense, and turns failures into short spoken answers. `openai.ts` runs the Responses API loop with the three tools in `tools.ts`, which also decides what waits for a yes. `t3.ts` opens one T3 Code connection per request with Luma's own client from `src/agents`.
+`src/main.ts` holds the commands. `server.ts` checks the token and reads the request. `assistant.ts` keeps the last few turns for three minutes, so "yes" and "the second one" make sense, and turns failures into short spoken answers. `openai.ts` runs the Responses API loop with the three tools in `tools.ts`, which also decides what waits for a yes. `t3.ts` opens one T3 Code connection per request with the TypeScript T3 Code client in `src/agents`, which the web launcher used before the native rewrite.
