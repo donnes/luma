@@ -13,7 +13,10 @@ concurrency:
 jobs:
   status:
     name: Changeset status
-    if: github.head_ref != 'changeset-release/main' || github.event.pull_request.head.repo.full_name != github.repository
+    # Closed PRs are skipped: an edit after merging would fetch a head branch that's already deleted.
+    if: >-
+      github.event.pull_request.state == 'open' &&
+      (github.head_ref != 'changeset-release/main' || github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
