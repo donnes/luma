@@ -196,7 +196,9 @@ pub fn parse_pairing_input(address: &str, code: &str) -> Result<PairingInput, In
         };
         format!("{scheme}://{raw}")
     };
-    let origin = Origin::parse(&with_scheme).ok_or(InputError::InvalidAddress)?;
+    let server = hosted_server(&with_scheme);
+    let origin = Origin::parse(server.as_deref().unwrap_or(&with_scheme))
+        .ok_or(InputError::InvalidAddress)?;
     let from_link = ['#', '?'].iter().find_map(|separator| {
         with_scheme
             .split_once(*separator)?
@@ -219,6 +221,28 @@ pub fn parse_pairing_input(address: &str, code: &str) -> Result<PairingInput, In
         url: origin.url(),
         code: token,
     })
+}
+
+/// T3 Code's hosted web app links (`https://app.t3.codes/pair?host=<server>#token=…`) name the
+/// server in a percent-encoded `host` query parameter.
+fn hosted_server(link: &str) -> Option<String> {
+    let query = link.split('#').next()?.split_once('?')?.1;
+    let host = query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("host="))?;
+    let mut bytes = Vec::with_capacity(host.len());
+    let mut rest = host.as_bytes();
+    while let Some((&byte, tail)) = rest.split_first() {
+        if byte == b'%' {
+            let hex = std::str::from_utf8(tail.get(..2)?).ok()?;
+            bytes.push(u8::from_str_radix(hex, 16).ok()?);
+            rest = &tail[2..];
+        } else {
+            bytes.push(byte);
+            rest = tail;
+        }
+    }
+    String::from_utf8(bytes).ok()
 }
 
 /// Merges the server's advertised addresses into the saved routes.
@@ -279,6 +303,16 @@ mod tests {
                 .unwrap()
                 .url,
             "https://pc.tail1234.ts.net/"
+        );
+        assert_eq!(
+            parse_pairing_input(
+                "https://app.t3.codes/pair?host=https%3A%2F%2Fpc.tail1234.ts.net%2F#token=K7QM4XR2HP9D",
+                ""
+            ),
+            Ok(PairingInput {
+                url: "https://pc.tail1234.ts.net/".into(),
+                code: "K7QM4XR2HP9D".into(),
+            })
         );
         assert_eq!(
             parse_pairing_input("192.168.1.10:3773", ""),
