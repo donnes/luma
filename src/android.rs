@@ -203,6 +203,18 @@ pub fn take_web_repair() -> Option<String> {
         .filter(|target| !target.is_empty())
 }
 
+/// Whether HomeGuard brought Luma forward for the Menu key over another app, once.
+pub fn take_inbox_request() -> bool {
+    call("takeInboxRequest", None).is_ok_and(|requested| !requested.is_empty())
+}
+
+/// Puts Luma behind the app the inbox was opened over.
+pub fn return_to_app() {
+    if let Err(error) = call("returnToApp", None) {
+        eprintln!("Luma agents inbox: {error}");
+    }
+}
+
 /// Hands HomeGuard the pairing it alerts with; an empty `config` once unpaired.
 pub fn watch_agents(config: &str) {
     if let Err(error) = call("watchAgents", Some(config)) {

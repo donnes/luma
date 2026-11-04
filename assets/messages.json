@@ -4139,6 +4139,21 @@
     "nl": "Verbinden met {server}…",
     "sv": "Ansluter till {server}…"
   },
+  "agentsInbox": {
+    "zh-tw": "收件匣",
+    "en": "Inbox",
+    "de": "Posteingang",
+    "es": "Bandeja de entrada",
+    "zh": "收件箱",
+    "pt": "Caixa de entrada",
+    "it": "In arrivo",
+    "ru": "Входящие",
+    "pl": "Skrzynka",
+    "fr": "Boîte de réception",
+    "vi": "Hộp thư",
+    "nl": "Inbox",
+    "sv": "Inkorg"
+  },
   "agentsQuietTitle": {
     "zh-tw": "一切平靜。",
     "en": "All quiet.",

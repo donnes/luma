@@ -940,3 +940,325 @@ pub(super) fn reply_preview(out: &mut Scene, state: &State, assets: &Assets) {
         false,
     );
 }
+
+/// T3 Code's mark on a light chip, as the inbox and alerts head with it.
+fn glyph(out: &mut Scene, assets: &Assets, rect: Rect) {
+    out.shape(rect, rect.w * 0.23, c(0xf5f5f5, 1.));
+    out.draw.push(Draw::TintedImage(
+        assets.path("logos/t3-code.lvec"),
+        rect.inset(rect.w * 0.14),
+        0.,
+        true,
+        c(0x17191c, 1.),
+    ));
+}
+
+const AMBER: u32 = 0xf5c26b;
+const MUTED: f32 = 0.56;
+const INBOX_WIDTH: f32 = 832.;
+const INBOX_ROW: f32 = 80.;
+const INBOX_HEADING: f32 = 44.;
+
+/// The inbox Menu opens on the right, over any page: the paired server's agents by group,
+/// under a line on why they're missing or may be out of date.
+pub(super) fn inbox(out: &mut Scene, state: &State, assets: &Assets) {
+    let language = state.preferences.language;
+    let now = now_ms();
+    let server = state
+        .agents
+        .pairing
+        .as_ref()
+        .map(|pairing| pairing.name().to_owned());
+    // Agents from the last snapshot stay listed while the connection is down.
+    let notice = match (&server, state.agents.status) {
+        (None, _) => Some(language.t("agentsPairTitle").to_owned()),
+        (_, Status::Expired) => Some(language.t("agentsExpiredTitle").to_owned()),
+        (_, Status::Offline) => Some(language.t("agentsOfflineTitle").to_owned()),
+        (_, Status::Connected) => None,
+        (Some(server), _) => Some(language.format("agentsConnecting", &[("server", server)])),
+    };
+    let groups = state.inbox_groups();
+    let rows: usize = groups.iter().map(|(_, agents)| agents.len()).sum();
+
+    // Lay the list out first, so the panel fits it and the focused row stays in view.
+    let mut items = Vec::new();
+    let mut y = 0.;
+    if notice.is_some() {
+        y += 52.;
+    }
+    for (label, agents) in &groups {
+        if agents.is_empty() {
+            continue;
+        }
+        items.push((y, None, *label));
+        y += INBOX_HEADING;
+        for agent in agents {
+            items.push((y, Some(agent), *label));
+            y += INBOX_ROW;
+        }
+    }
+    let empty = rows == 0;
+    if empty {
+        y += 64. + 84.;
+    }
+    let top_padding = 38.;
+    let header = 62.;
+    let max_list = 1080. - 88. - top_padding - header - 26.;
+    let list_height = y.min(max_list);
+    let panel = Rect::new(
+        1920. - 84. - INBOX_WIDTH,
+        44.,
+        INBOX_WIDTH,
+        top_padding + header + list_height + 26.,
+    );
+    out.modal = Some(panel);
+    out.shadow(panel, 27.2, 120., 25., 0.45);
+    out.draw.push(Draw::RoundedGradient(
+        panel,
+        27.2,
+        c(0x2c3033, 0.97),
+        c(0x1d2024, 0.99),
+    ));
+    out.border(panel, 27.2, 1., c(0xffffff, 0.12));
+
+    let left = panel.x + 26.;
+    let inner = panel.w - 52.;
+    glyph(
+        out,
+        assets,
+        Rect::new(left + 19., panel.y + top_padding, 38., 38.),
+    );
+    out.text(
+        language.t("agentsInbox"),
+        Rect::new(left + 72., panel.y + top_padding + 1., 400., 40.),
+        text(35.2, 500, -0.05).leading(1.1),
+        WHITE,
+        false,
+    );
+    if let Some(server) = &server {
+        let style = text(17.6, 450, 0.);
+        let width = assets.width(server, style).min(320.);
+        out.text(
+            clip(assets, server, style, 320., 1),
+            Rect::new(
+                left + inner - 19. - width,
+                panel.y + top_padding + 10.,
+                width + 2.,
+                24.,
+            ),
+            style,
+            c(0xf5f5f5, MUTED),
+            false,
+        );
+    }
+
+    let list = Rect::new(
+        panel.x,
+        panel.y + top_padding + header,
+        panel.w,
+        list_height,
+    );
+    let focused_bottom = items
+        .iter()
+        .find(|(_, agent, _)| {
+            agent.is_some_and(|agent| state.focus == Target::InboxAgent(agent.thread.id.clone()))
+        })
+        .map_or(0., |(y, ..)| y + INBOX_ROW);
+    let offset = (focused_bottom - list_height).max(0.);
+    out.draw.push(Draw::Clip(Some(list)));
+    if let Some(notice) = &notice {
+        out.text(
+            notice,
+            Rect::new(left + 19., list.y - offset + 6., inner - 38., 30.),
+            text(22.4, 500, -0.02),
+            c(0xf5f5f5, 0.85),
+            false,
+        );
+    }
+    for (y, agent, label) in &items {
+        let y = list.y + y - offset;
+        let Some(agent) = agent else {
+            out.text(
+                language.t(label).to_uppercase(),
+                Rect::new(left + 19., y + 19., inner - 38., 20.),
+                text(15.2, 650, 0.12),
+                c(0xf5f5f5, MUTED),
+                false,
+            );
+            continue;
+        };
+        let target = Target::InboxAgent(agent.thread.id.clone());
+        let rect = Rect::new(left, y, inner, INBOX_ROW - 4.);
+        if state.focus == target {
+            out.shape(rect, 16., c(0xffffff, 0.08));
+            out.border(rect, 16., 2., c(0xf0f0f0, 0.95));
+        }
+        out.shape(
+            Rect::new(rect.x + 19., rect.y + rect.h / 2. - 6., 12., 12.),
+            6.,
+            c(status_color(agent.status), 1.),
+        );
+        let time = elapsed(agent.since(), now);
+        let time_style = text(16.8, 450, 0.);
+        let time_width = assets.width(&time, time_style);
+        out.text(
+            time.clone(),
+            Rect::new(
+                rect.x + rect.w - 19. - time_width,
+                rect.y + 28.,
+                time_width + 2.,
+                24.,
+            ),
+            time_style,
+            c(0xf5f5f5, MUTED),
+            false,
+        );
+        let text_left = rect.x + 19. + 12. + 16.;
+        let text_width = rect.w - (text_left - rect.x) - 19. - time_width - 16.;
+        let title_style = text(23.2, 500, -0.03);
+        out.text(
+            clip(assets, &agent.thread.title, title_style, text_width, 1),
+            Rect::new(text_left, rect.y + 13., text_width, 30.),
+            title_style,
+            WHITE,
+            false,
+        );
+        if let Some(project) = agent.project {
+            let style = text(16.8, 450, 0.);
+            out.text(
+                clip(assets, &project.title, style, text_width, 1),
+                Rect::new(text_left, rect.y + 45., text_width, 22.),
+                style,
+                c(0xf5f5f5, MUTED),
+                false,
+            );
+        }
+        out.control(target, rect, false);
+    }
+    out.draw.push(Draw::Clip(None));
+    if empty {
+        let y = list.y + list.h - 64. - 20.;
+        if notice.is_none() {
+            out.text(
+                language.t("agentsQuietTitle"),
+                Rect::new(left + 19., list.y + 6., inner - 38., 30.),
+                text(22.4, 500, -0.02),
+                c(0xf5f5f5, 0.85),
+                false,
+            );
+        }
+        pill(
+            out,
+            state,
+            assets,
+            Pill {
+                target: Target::InboxT3,
+                x: left + 19.,
+                y,
+                icon: None,
+                label: "T3 Code",
+                primary: false,
+            },
+        );
+    }
+}
+
+/// The agent that newly needs you, at the top right for a few seconds. It never takes
+/// focus or keys, so whatever is on screen keeps the remote.
+pub(super) fn alert(out: &mut Scene, state: &State, assets: &Assets) {
+    use crate::state::agents_state::{ALERT_FADE, ALERT_TIME};
+    let (Some(alert), Some(shown)) = (state.agents_ui.alerts.front(), state.agents_ui.alert_shown)
+    else {
+        return;
+    };
+    let language = state.preferences.language;
+    let elapsed = shown.elapsed();
+    let alpha = if state.preferences.reduced_motion {
+        1.
+    } else {
+        let fade = ALERT_FADE.as_secs_f32();
+        (elapsed.as_secs_f32() / fade)
+            .min((ALERT_TIME.saturating_sub(elapsed)).as_secs_f32() / fade)
+            .clamp(0., 1.)
+    };
+    let start = out.draw.len();
+    let height = if alert.project.is_empty() { 118. } else { 146. };
+    let panel = Rect::new(1836. - 720., 128., 720., height);
+    out.shadow(panel, 27.2, 48., 12., 0.45);
+    out.draw.push(Draw::RoundedGradient(
+        panel,
+        27.2,
+        c(0x2c3033, 0.97),
+        c(0x1d2024, 0.99),
+    ));
+    out.border(panel, 27.2, 1., c(0xffffff, 0.12));
+    out.shape(
+        Rect::new(panel.x + 26., panel.y + 26., 7., panel.h - 52.),
+        3.5,
+        c(AMBER, 1.),
+    );
+    let left = panel.x + 26. + 7. + 22.;
+    let width = panel.w - (left - panel.x) - 30.;
+    glyph(out, assets, Rect::new(left, panel.y + 25., 26., 26.));
+    let headline = format!(
+        "{} · {}",
+        language.t("agentNeedsYou"),
+        language.t(if alert.asked {
+            "agentAlertAsked"
+        } else {
+            "agentAlertApproval"
+        })
+    );
+    let source = state
+        .agents
+        .pairing
+        .as_ref()
+        .map_or(String::new(), |pairing| pairing.name().to_owned());
+    let source_style = text(17.6, 450, 0.);
+    let source_width = assets.width(&source, source_style).min(220.);
+    out.text(
+        clip(assets, &source, source_style, 220., 1),
+        Rect::new(
+            left + width - source_width,
+            panel.y + 28.,
+            source_width + 2.,
+            24.,
+        ),
+        source_style,
+        c(0xf5f5f5, MUTED),
+        false,
+    );
+    let headline_style = text(20., 500, -0.01);
+    out.text(
+        clip(
+            assets,
+            &headline,
+            headline_style,
+            width - 38. - source_width - 16.,
+            1,
+        ),
+        Rect::new(left + 38., panel.y + 27., width - 38., 26.),
+        headline_style,
+        c(AMBER, 1.),
+        false,
+    );
+    let title_style = text(25.6, 600, -0.03);
+    out.text(
+        clip(assets, &alert.title, title_style, width, 1),
+        Rect::new(left, panel.y + 64., width, 32.),
+        title_style,
+        WHITE,
+        false,
+    );
+    if !alert.project.is_empty() {
+        let style = text(17.6, 450, 0.);
+        out.text(
+            clip(assets, &alert.project, style, width, 1),
+            Rect::new(left, panel.y + 100., width, 24.),
+            style,
+            c(0xf5f5f5, MUTED),
+            false,
+        );
+    }
+    out.fade(start, alpha, 1.);
+}

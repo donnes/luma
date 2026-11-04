@@ -91,7 +91,8 @@ It does not execute the test suites. A desktop display is required; on headless 
 | OK or Back in move mode       | Finish reordering without launching                           |
 | Escape / Back / Backspace     | Parent navigation, overlay dismissal or Recent apps from Home |
 | Hold Back / Escape for 600 ms | Open Recent apps while Luma is focused                        |
-| Menu / M / right-click        | App or background options side popup                          |
+| Menu                          | Agents inbox over any page; Menu or Back closes it            |
+| M / right-click               | App or background options side popup                          |
 | Pointer / wheel               | Hover, click, hold and scrolling                              |
 | F5                            | Refresh inventory                                             |
 

@@ -110,7 +110,8 @@ tile and Amazon's launcher opens Luma itself.
 ## Agent alerts
 
 When a T3 Code agent newly needs you, HomeGuard shows a toast in the top-right
-corner for six seconds, over any app and over Luma, video included. It draws it in
+corner for six seconds, over any app and over Luma, video included. Luma draws its
+own toasts on other platforms and leaves them to HomeGuard here. HomeGuard draws it in
 an accessibility overlay window that takes no focus, keys or touches, so the app
 underneath keeps the remote and keeps playing.
 
@@ -126,6 +127,15 @@ The T3 Code tile opens the agents page, which pairs Luma with T3 Code and hands 
 that HomeGuard already watched for the web launcher, Luma carries that pairing over on
 first start.
 
+## Agents inbox
+
+The remote's Menu key opens the agents inbox on any Luma page. In another app,
+HomeGuard filters Menu (the only key it filters), brings Luma forward with
+`app.luma.firetv.OPEN_INBOX`, and Luma opens the inbox; closing it with Back or Menu
+calls `returnToApp`, which moves Luma's task behind that app again. The app stops
+while Luma is in front, so a video pauses there. OK on an agent opens its thread in
+T3 Code's web app.
+
 ## T3 Code's web app
 
 Open on an agent shows its thread in T3 Code's own web app (`WebAppActivity`, with
@@ -140,6 +150,4 @@ services); enable it again with the commands above.
 
 ## Not yet native
 
-- The agents inbox over other apps on Menu, and Luma's own alert toasts; HomeGuard's
-  toasts show over Luma for now.
 - Luma's own conversation view; Open uses T3 Code's web app.

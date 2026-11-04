@@ -2,14 +2,17 @@
 //! actions, pairing and replies.
 //! T3 Code itself runs in `crate::t3`; this queues the commands the UI sends it in `outbox`,
 //! which the main loop hands to the connection worker.
-use super::{Overlay, Page, State, Target, TextField};
+use super::{Control, Direction, Overlay, Page, State, Target, TextField};
 use crate::t3::{
     self, Action, Command, Outcome, Status,
-    model::{Agent, Pending},
+    model::{Agent, AgentStatus, Pending},
     pairing::PairingError,
     routes::{InputError, parse_pairing_input},
 };
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    time::{Duration, Instant},
+};
 
 /// The T3 Code tile's id: never an installed app's, and never launched or uninstalled.
 pub const AGENTS_APP_ID: &str = "luma.t3code";
@@ -24,7 +27,27 @@ pub enum Outbound {
         then: String,
         origin: String,
     },
+    /// Fire TV: put Luma behind the app the inbox was opened over.
+    ReturnToApp,
 }
+
+/// An agent that newly needs you, at the top right for a few seconds.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AgentAlert {
+    pub request: String,
+    /// It asked a question; otherwise it waits for an approval.
+    pub asked: bool,
+    pub title: String,
+    pub project: String,
+}
+
+/// How long an alert stays up, and how long it takes to fade in or out.
+pub const ALERT_TIME: Duration = Duration::from_secs(6);
+pub const ALERT_FADE: Duration = Duration::from_millis(200);
+
+/// Whether Luma draws its own alerts: on Fire TV, HomeGuard draws them over every app,
+/// Luma included.
+const DRAWS_ALERTS: bool = !cfg!(target_os = "android");
 
 pub struct AgentsUi {
     /// The tab the T3 Code tile was opened from, which Back returns to.
@@ -52,6 +75,12 @@ pub struct AgentsUi {
     /// session won't stick, so Luma stops rather than loop.
     #[cfg_attr(not(target_os = "android"), allow(dead_code))]
     pub repaired: Option<std::time::Instant>,
+    /// Alerts waiting their turn; the first has shown since `alert_shown`.
+    pub alerts: VecDeque<AgentAlert>,
+    pub alert_shown: Option<Instant>,
+    /// Pending requests already alerted about. None until the first full shell, whose
+    /// waiting agents were there before Luma was and don't alert.
+    alerted: Option<BTreeSet<String>>,
 }
 
 impl Default for AgentsUi {
@@ -72,6 +101,9 @@ impl Default for AgentsUi {
             opening: None,
             save: false,
             repaired: None,
+            alerts: VecDeque::new(),
+            alert_shown: None,
+            alerted: None,
         }
     }
 }
@@ -291,6 +323,19 @@ impl State {
             Target::PairAddress => self.open_keyboard(TextField::PairAddress),
             Target::PairCode => self.open_keyboard(TextField::PairCode),
             Target::PairSubmit => self.submit_pairing(),
+            Target::InboxAgent(id) => {
+                self.overlay = None;
+                if OPENS_WEB_APP {
+                    self.open_agent(&id);
+                } else {
+                    self.agents_ui.selected = Some(id);
+                    self.open_agents();
+                }
+            }
+            Target::InboxT3 => {
+                self.overlay = None;
+                self.open_agents();
+            }
             _ => return false,
         }
         self.dirty = true;
@@ -480,7 +525,9 @@ impl State {
     /// Folds a worker event in; outcomes become notices and follow-ups.
     pub fn agents_event(&mut self, event: t3::Event) {
         self.dirty = true;
-        let Some(outcome) = self.agents.apply(event) else {
+        let outcome = self.agents.apply(event);
+        self.update_agent_alerts();
+        let Some(outcome) = outcome else {
             return;
         };
         let language = self.preferences.language;
@@ -534,6 +581,149 @@ impl State {
                 self.notify(language.t("agentsWebFailed"));
             }
         }
+    }
+
+    /// Up from the spotlight reaches the connection pill at the top right, which the
+    /// geometric search would skip for the tabs.
+    pub(super) fn agents_up(&self, direction: Direction, controls: &[Control]) -> Option<Target> {
+        (self.page == Page::Agents
+            && matches!(direction, Direction::Up)
+            && matches!(self.focus, Target::AgentAction(_) | Target::AgentsRetry)
+            && controls
+                .iter()
+                .any(|control| control.target == Target::AgentsConnection))
+        .then_some(Target::AgentsConnection)
+    }
+
+    /// The inbox's rows in order: needs you, then done, then working, as the shelf ranks
+    /// them within each group.
+    pub fn inbox_groups(&self) -> [(&'static str, Vec<Agent<'_>>); 3] {
+        let mut groups = [
+            ("agentNeedsYou", Vec::new()),
+            ("agentDone", Vec::new()),
+            ("agentWorking", Vec::new()),
+        ];
+        if self.agents.status == Status::Expired {
+            return groups;
+        }
+        for agent in self.agents.shell.shelf(now_ms()) {
+            let group = if agent.status.needs_you() {
+                0
+            } else if agent.status.working() {
+                2
+            } else {
+                1
+            };
+            groups[group].1.push(agent);
+        }
+        groups
+    }
+
+    /// Menu: the inbox over whatever page is showing, or closed again. `returns` when Fire
+    /// TV brought Luma forward for it over another app.
+    pub fn toggle_inbox(&mut self, returns: bool) {
+        if let Some(Overlay::AgentsInbox { restore, returns }) = &self.overlay {
+            let (restore, returns) = (restore.clone(), *returns);
+            self.overlay = None;
+            self.close_inbox(restore, returns);
+            return;
+        }
+        if self.overlay.is_some() || self.moving.is_some() {
+            return;
+        }
+        let first = self
+            .inbox_groups()
+            .iter()
+            .find_map(|(_, agents)| agents.first())
+            .map_or(Target::InboxT3, |agent| {
+                Target::InboxAgent(agent.thread.id.clone())
+            });
+        self.overlay = Some(Overlay::AgentsInbox {
+            restore: self.focus.clone(),
+            returns,
+        });
+        self.focus = first;
+        self.panel_started = (!self.preferences.reduced_motion).then(Instant::now);
+        self.dirty = true;
+    }
+
+    pub(super) fn close_inbox(&mut self, restore: Target, returns: bool) {
+        self.dirty = true;
+        self.focus = restore;
+        self.reconcile_focus();
+        if returns {
+            self.agents_ui.outbox.push(Outbound::ReturnToApp);
+        }
+    }
+
+    /// Queues an alert for each request that's new since the last shell, and drops those
+    /// that ended, say because they were answered elsewhere.
+    fn update_agent_alerts(&mut self) {
+        let shell = &self.agents.shell;
+        if !DRAWS_ALERTS || !shell.ready {
+            return;
+        }
+        let ui = &mut self.agents_ui;
+        let pending: BTreeSet<&str> = shell
+            .threads
+            .values()
+            .filter_map(|thread| thread.pending_runtime_request.as_ref())
+            .map(|request| request.id.as_str())
+            .collect();
+        let first = ui.alerted.is_none();
+        let alerted = ui.alerted.get_or_insert_with(BTreeSet::new);
+        alerted.retain(|id| pending.contains(id.as_str()));
+        for agent in shell.shelf(now_ms()) {
+            let Some(request) = &agent.thread.pending_runtime_request else {
+                continue;
+            };
+            if !agent.status.needs_you() || !alerted.insert(request.id.clone()) || first {
+                continue;
+            }
+            ui.alerts.push_back(AgentAlert {
+                request: request.id.clone(),
+                asked: agent.status == AgentStatus::Input,
+                title: agent.thread.title.clone(),
+                project: agent
+                    .project
+                    .map_or(String::new(), |project| project.title.clone()),
+            });
+        }
+        let showing = ui.alerts.front().map(|alert| alert.request.clone());
+        ui.alerts
+            .retain(|alert| pending.contains(alert.request.as_str()));
+        if ui.alerts.front().map(|alert| &alert.request) != showing.as_ref() {
+            ui.alert_shown = None;
+        }
+    }
+
+    /// Shows the next alert and retires the one whose time is up.
+    pub(super) fn tick_agent_alerts(&mut self) {
+        let ui = &mut self.agents_ui;
+        if ui.alerts.is_empty() {
+            ui.alert_shown = None;
+            return;
+        }
+        match ui.alert_shown {
+            None => {
+                ui.alert_shown = Some(Instant::now());
+                self.dirty = true;
+            }
+            Some(shown) if shown.elapsed() >= ALERT_TIME => {
+                ui.alerts.pop_front();
+                ui.alert_shown = None;
+                self.dirty = true;
+            }
+            Some(_) => self.dirty |= self.agent_alert_fading(),
+        }
+    }
+
+    pub(super) fn agent_alert_fading(&self) -> bool {
+        !self.preferences.reduced_motion
+            && self.agents_ui.alert_shown.is_some_and(|shown| {
+                let elapsed = shown.elapsed();
+                elapsed < ALERT_FADE || elapsed + ALERT_FADE > ALERT_TIME
+            })
     }
 
     /// After answering, the spotlight moves on to the next agent that needs you.
@@ -608,6 +798,92 @@ mod tests {
         state.back();
         assert_eq!(state.page, Page::Apps);
         assert_eq!(state.focus, Target::App(AGENTS_APP_ID.into()));
+    }
+
+    fn needing_you(id: &str, request: &str) -> crate::t3::types::ThreadShell {
+        crate::t3::types::ThreadShell {
+            id: id.into(),
+            title: format!("Thread {id}"),
+            status: "running".into(),
+            pending_runtime_request: Some(crate::t3::types::PendingRuntimeRequest {
+                id: request.into(),
+                kind: "user_input".into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn shell(threads: Vec<crate::t3::types::ThreadShell>) -> crate::t3::Event {
+        crate::t3::Event::Shell(crate::t3::model::Shell {
+            threads: threads
+                .into_iter()
+                .map(|thread| (thread.id.clone(), thread))
+                .collect(),
+            ready: true,
+            ..Default::default()
+        })
+    }
+
+    #[test]
+    #[cfg(not(target_os = "android"))]
+    fn alerts_are_for_requests_that_arrive_while_luma_watches_and_end_with_them() {
+        let mut state = State::new(Preferences::default());
+        state.agents_event(shell(vec![needing_you("a", "r1")]));
+        assert!(
+            state.agents_ui.alerts.is_empty(),
+            "what waited before Luma connected doesn't alert"
+        );
+        state.agents_event(shell(vec![needing_you("a", "r1"), needing_you("b", "r2")]));
+        let requests = |state: &State| -> Vec<String> {
+            state
+                .agents_ui
+                .alerts
+                .iter()
+                .map(|alert| alert.request.clone())
+                .collect()
+        };
+        assert_eq!(requests(&state), ["r2"]);
+        assert!(state.agents_ui.alerts[0].asked);
+        assert_eq!(state.agents_ui.alerts[0].title, "Thread b");
+        state.agents_event(shell(vec![needing_you("a", "r1"), needing_you("b", "r2")]));
+        assert_eq!(requests(&state), ["r2"], "one alert per request");
+        state.agents_event(shell(vec![needing_you("a", "r1")]));
+        assert!(
+            requests(&state).is_empty(),
+            "answered elsewhere, it leaves the queue"
+        );
+    }
+
+    #[test]
+    fn menu_opens_the_inbox_and_back_returns_to_the_page_or_the_app_it_opened_over() {
+        use super::Outbound;
+        use crate::state::{Overlay, Page, Target};
+        let mut state = State::new(Preferences::default());
+        state.agents_event(shell(vec![needing_you("a", "r1")]));
+        state.focus = Target::Nav(0);
+        state.toggle_inbox(false);
+        assert!(matches!(state.overlay, Some(Overlay::AgentsInbox { .. })));
+        assert_eq!(state.focus, Target::InboxAgent("a".into()));
+        state.back();
+        assert!(state.overlay.is_none());
+        assert_eq!(state.focus, Target::Nav(0));
+        assert!(state.agents_ui.outbox.is_empty());
+
+        state.toggle_inbox(true);
+        state.dirty = false;
+        state.toggle_inbox(true);
+        assert!(state.overlay.is_none(), "Menu closes it too");
+        assert!(state.dirty, "and the page redraws without it");
+        assert_eq!(state.agents_ui.outbox, [Outbound::ReturnToApp]);
+
+        if !super::OPENS_WEB_APP {
+            state.toggle_inbox(false);
+            state.activate();
+            assert!(state.overlay.is_none());
+            assert_eq!(state.page, Page::Agents);
+            assert_eq!(state.agents_ui.selected.as_deref(), Some("a"));
+        }
     }
 
     #[test]

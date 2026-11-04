@@ -1116,6 +1116,10 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<(), String> {
                         eprintln!("Luma T3 Code web app: {error}");
                     }
                 }
+                Outbound::ReturnToApp => {
+                    #[cfg(target_os = "android")]
+                    android::return_to_app();
+                }
             }
         }
         // The socket stays open only while Luma is in front.
@@ -1139,6 +1143,10 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<(), String> {
             }
             if agents_resumed && let Some(target) = android::take_web_repair() {
                 state.repair_web_app(&target);
+            }
+            // HomeGuard brought Luma forward for Menu over another app.
+            if agents_resumed && android::take_inbox_request() {
+                state.toggle_inbox(true);
             }
         }
         let focus = state.agents_focus_thread();
@@ -1490,7 +1498,13 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<(), String> {
                             let length = state.editing_text().len() as i32;
                             state.delete_surrounding_text(-length, length);
                         }
-                        Keycode::M | Keycode::Menu if !repeat && state.overlay.is_none() => {
+                        // The remote's Menu key opens the agents inbox; M and right-click
+                        // keep upstream's app options.
+                        Keycode::Menu if !repeat => {
+                            press = None;
+                            state.toggle_inbox(false);
+                        }
+                        Keycode::M if !repeat && state.overlay.is_none() => {
                             press = None;
                             state.options();
                         }

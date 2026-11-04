@@ -606,7 +606,8 @@ pub fn scene_with_pill(
         | Overlay::Keyboard
         | Overlay::WallpaperUpload
         | Overlay::TileEditor
-        | Overlay::AgentsConnection),
+        | Overlay::AgentsConnection
+        | Overlay::AgentsInbox { .. }),
     ) = &state.overlay
     {
         let anchor = match overlay {
@@ -658,6 +659,7 @@ pub fn scene_with_pill(
             Overlay::WallpaperUpload => wallpaper_upload(&mut out, state, assets),
             Overlay::TileEditor => tile_editor(&mut out, state, assets),
             Overlay::AgentsConnection => agents_view::connection_dialog(&mut out, state, assets),
+            Overlay::AgentsInbox { .. } => agents_view::inbox(&mut out, state, assets),
             Overlay::SystemKeyboard | Overlay::Recents { .. } => {}
         }
         if !matches!(
@@ -703,6 +705,7 @@ pub fn scene_with_pill(
     {
         agents_view::reply_preview(&mut out, state, assets);
     }
+    agents_view::alert(&mut out, state, assets);
     if let Some((notice, _)) = &state.notice {
         toast(&mut out, state, assets, notice);
     }

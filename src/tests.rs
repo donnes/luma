@@ -3260,3 +3260,39 @@ fn update_card_shows_progress_restores_retry_and_ignores_presses_while_busy() {
     state.install_response(Response::Finished(Ok(())));
     assert_eq!(state.update_status, Status::Unchecked);
 }
+
+#[test]
+fn up_from_the_agents_spotlight_reaches_the_connection_pill() {
+    use crate::t3::{
+        Event, Status, model::Shell, pairing::Pairing, routes::Route, types::ThreadShell,
+    };
+    let mut state = ready();
+    let lan = Route::new("http://192.168.1.10:3773/").unwrap();
+    state.agents_event(Event::Pairing(Some(Pairing {
+        environment_id: "env-1".into(),
+        label: "donnes-pc".into(),
+        token: "token-1".into(),
+        expires_at: 0,
+        paired_on: lan.clone(),
+        routes: vec![lan.clone()],
+    })));
+    state.agents_event(Event::Route(Some(lan)));
+    state.agents_event(Event::Status(Status::Connected));
+    let thread = ThreadShell {
+        id: "t1".into(),
+        title: "Tidy the docs".into(),
+        status: "running".into(),
+        ..ThreadShell::default()
+    };
+    state.agents_event(Event::Shell(Shell {
+        threads: BTreeMap::from([(thread.id.clone(), thread)]),
+        ready: true,
+        ..Shell::default()
+    }));
+    state.page = Page::Agents;
+    state.focus = Target::AgentAction(0);
+    state.direction(Direction::Up, &controls(&state));
+    assert_eq!(state.focus, Target::AgentsConnection);
+    state.direction(Direction::Up, &controls(&state));
+    assert_eq!(state.focus, Target::Nav(state.page_index()));
+}

@@ -111,6 +111,10 @@ pub enum Target {
     PairCode,
     PairSubmit,
     Unpair,
+    /// An agent in the inbox Menu opens, by thread id.
+    InboxAgent(String),
+    /// The inbox's way to the agents page while it lists no agents.
+    InboxT3,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -169,6 +173,12 @@ pub enum Overlay {
     },
     /// The T3 Code server's addresses and Unpair.
     AgentsConnection,
+    /// The agents inbox, over any page. `returns` sends Luma behind the app it was opened
+    /// over once it closes (Fire TV's Menu key in another app).
+    AgentsInbox {
+        restore: Target,
+        returns: bool,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -409,6 +419,7 @@ impl State {
     }
 
     pub fn tick(&mut self) {
+        self.tick_agent_alerts();
         let recents_open = self.recents_open();
         if recents_open || self.recents.visibility > 0. {
             self.dirty |= self.recents.animate(
@@ -468,6 +479,7 @@ impl State {
                 || self.recents.cards_animating(self.pointer)))
             || self.previous_background.is_some()
             || self.panel_started.is_some()
+            || self.agent_alert_fading()
             || (!self.preferences.reduced_motion
                 && self
                     .notice
@@ -1116,6 +1128,10 @@ impl State {
             return vec![];
         }
         if self.overlay.is_none() {
+            if let Some(target) = self.agents_up(direction, controls) {
+                self.focus(target, controls);
+                return vec![];
+            }
             if self.page == Page::Home
                 && let Target::App(id) = &self.focus
             {
@@ -2549,6 +2565,10 @@ impl State {
             self.panel_started = None;
             if matches!(overlay, Overlay::AgentsConnection) {
                 self.focus = Target::AgentsConnection;
+                return vec![];
+            }
+            if let Overlay::AgentsInbox { restore, returns } = overlay {
+                self.close_inbox(restore, returns);
                 return vec![];
             }
             if let Overlay::BackgroundDelete { id, restore } = overlay {

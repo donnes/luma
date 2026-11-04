@@ -69,11 +69,16 @@ import org.json.JSONObject;
  * <p>It also watches the paired T3 Code server ({@link AgentWatch}) and alerts
  * when an agent newly needs you: over another app as a toast in the top-right
  * corner, in a window that takes no focus, keys or touches, so the app
- * underneath keeps the remote and keeps playing. The native launcher has no
- * toasts of its own yet, so the same toast shows over Luma. AgentWatch alone
+ * underneath keeps the remote and keeps playing. Luma leaves its alerts to
+ * this service on Fire TV, so the same toast shows over Luma. AgentWatch alone
  * decides what's new and what ended while the service runs. Several alerts
  * show one after another, and one whose request ends, say because it was
  * answered elsewhere, leaves the screen or the queue.
+ *
+ * <p>The Menu key in another app brings Luma forward with its agents inbox
+ * open; closing the inbox puts Luma behind that app again. Luma handles Menu
+ * itself while it's in front, so the key goes through then. The service
+ * filters key events for this alone: every other key passes straight on.
  *
  * <p>Events come only from Amazon's launcher package; window content is read
  * only to find the Luma tile there. Enable it once over ADB (see
@@ -124,6 +129,8 @@ public final class HomeGuard extends AccessibilityService {
   private boolean lumaVisible;
   private int lumaPid;
   private long lumaShownAt;
+  /** Whether this Menu press opens the inbox, so its key-up goes the same way. */
+  private boolean menuOpensInbox;
 
   private final BroadcastReceiver lumaState =
       new BroadcastReceiver() {
@@ -233,6 +240,32 @@ public final class HomeGuard extends AccessibilityService {
       return;
     }
     returnToLuma();
+  }
+
+  /** Runs for every key press on the device, so anything but Menu leaves at once. */
+  @Override
+  protected boolean onKeyEvent(KeyEvent event) {
+    if (event.getKeyCode() != KeyEvent.KEYCODE_MENU) {
+      return false;
+    }
+    if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+      // While the cover hides Amazon's home on the way back, it takes the key.
+      menuOpensInbox = cover == null && !lumaInFront();
+      if (menuOpensInbox) openInbox();
+    }
+    return menuOpensInbox;
+  }
+
+  /** Brings Luma forward with the agents inbox open over the app in front. */
+  private void openInbox() {
+    Intent inbox = new Intent(this, MainActivity.class);
+    inbox.setAction(MainActivity.ACTION_OPEN_INBOX);
+    inbox.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    try {
+      startActivity(inbox);
+    } catch (RuntimeException e) {
+      Log.w(TAG, "Opening the agents inbox failed", e);
+    }
   }
 
   /**
@@ -350,7 +383,7 @@ public final class HomeGuard extends AccessibilityService {
     cover = null;
   }
 
-  /** The native launcher draws no toasts yet, so alerts go over Luma too. */
+  /** Luma leaves its alerts to this service on Fire TV, so they go over Luma too. */
   private void onAgentAlert(JSONObject alert) {
     nextAlerts.add(alert);
     if (this.alert == null) showNextAlert();

@@ -44,8 +44,13 @@ public class MainActivity extends SDLActivity {
   /** From WebAppActivity, when T3 Code's session needs pairing again. */
   static final String ACTION_REPAIR_WEB_APP = "app.luma.firetv.REPAIR_WEB_APP";
 
+  /** From HomeGuard, for the Menu key over another app. */
+  static final String ACTION_OPEN_INBOX = "app.luma.firetv.OPEN_INBOX";
+
   /** Where the web app was headed when it asked; Luma takes it on its next loop. */
   private static volatile String webRepair;
+  /** HomeGuard asked for the inbox; Luma takes it on its next loop. */
+  private static volatile boolean inboxRequested;
 
   private final Shell shell = new Shell(this);
   private final Handler main = new Handler(Looper.getMainLooper());
@@ -71,19 +76,21 @@ public class MainActivity extends SDLActivity {
         new IntentFilter(HomeGuard.ACTION_REPORT_LUMA),
         HomeGuard.PERMISSION,
         null);
-    // A restored activity would repeat the repair it was started for.
-    if (savedInstanceState == null) keepWebRepair(getIntent());
+    // A restored activity would repeat the request it was started for.
+    if (savedInstanceState == null) keepRequest(getIntent());
   }
 
   @Override
   protected void onNewIntent(Intent intent) {
     super.onNewIntent(intent);
-    keepWebRepair(intent);
+    keepRequest(intent);
   }
 
-  private static void keepWebRepair(Intent intent) {
+  private static void keepRequest(Intent intent) {
     if (ACTION_REPAIR_WEB_APP.equals(intent.getAction())) {
       webRepair = intent.getStringExtra(WebAppActivity.EXTRA_URL);
+    } else if (ACTION_OPEN_INBOX.equals(intent.getAction())) {
+      inboxRequested = true;
     }
   }
 
@@ -156,6 +163,18 @@ public class MainActivity extends SDLActivity {
     String target = webRepair;
     webRepair = null;
     return target == null ? "" : target;
+  }
+
+  public String takeInboxRequest() {
+    boolean requested = inboxRequested;
+    inboxRequested = false;
+    return requested ? "1" : "";
+  }
+
+  /** The inbox opened over another app closed: that app comes back in front. */
+  public String returnToApp() {
+    main.post(() -> moveTaskToBack(true));
+    return "{}";
   }
 
   /** The T3 Code pairing HomeGuard alerts with; see {@link HomeGuard#watchAgents}. */
