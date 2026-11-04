@@ -30,6 +30,7 @@ impl Brand {
             "hbo-max" | "bbc-iplayer" | "crunchyroll" | "twitch" | "dazn" | "paramount-plus"
             | "channel-4" | "wavve" => (0.70, 64.),
             "now-tv" => (0.70, 52.),
+            "t3-code" => (0.44, 78.),
             "live-tv" | "browser" => (0.62, 68.),
             _ => (0.70, 56.),
         }
@@ -146,7 +147,16 @@ pub fn for_app(id: &str) -> Option<&'static Brand> {
         .iter()
         .find(|brand| brand.ids.contains(&id))
         .or_else(|| android_brand(id))
+        .or_else(|| T3_CODE.ids.contains(&id).then_some(&T3_CODE))
 }
+
+/// Luma's own T3 Code tile; it isn't an installed app, so it isn't in `BRANDS`.
+static T3_CODE: Brand = Brand {
+    key: "t3-code",
+    title: "T3 Code",
+    ids: &[crate::state::agents_state::AGENTS_APP_ID],
+    category: "Utilities",
+};
 
 /// Fire TV and Android TV package names for the same brands; `BRANDS` lists webOS ids.
 const ANDROID_APPS: &[(&str, &str)] = &[
@@ -178,7 +188,10 @@ fn android_brand(id: &str) -> Option<&'static Brand> {
 }
 
 pub fn for_key(key: &str) -> Option<&'static Brand> {
-    BRANDS.iter().find(|brand| brand.key == key)
+    BRANDS
+        .iter()
+        .find(|brand| brand.key == key)
+        .or_else(|| (key == T3_CODE.key).then_some(&T3_CODE))
 }
 
 #[cfg(test)]

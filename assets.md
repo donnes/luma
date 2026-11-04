@@ -56,6 +56,10 @@ sources. Original sources remain in `assets/`; no artwork service is contacted o
 | `zdf.svg`         | [ZDF](https://commons.wikimedia.org/wiki/File:ZDF_logo.svg)                                           | ZDF; public-domain logo artwork                                                        |
 | `das-erste.svg`   | [Das Erste](https://commons.wikimedia.org/wiki/File:Das_Erste_2014.svg)                               | ARD; public-domain logo artwork                                                        |
 
+The T3 Code tile's mark (`t3-code.svg`) is the path from T3 Code's `assets/prod/logo.svg`
+([pingdotgg/t3code](https://github.com/pingdotgg/t3code), MIT). It identifies the T3 Code server
+Luma pairs with; Luma is not affiliated with T3 Tools.
+
 ### Expanded streaming and music artwork
 
 `tools/brand-assets.mjs` records each upstream URL and SHA-256. The SVGs are checked in, so

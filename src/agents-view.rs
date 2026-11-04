@@ -1,5 +1,5 @@
-//! The Agents tab: the agent that needs you in the spotlight with its actions, every live
-//! agent on a shelf below, and the pairing screen before that.
+//! The agents page, opened from the T3 Code tile: the agent that needs you in the spotlight
+//! with its actions, every live agent on a shelf below, and the pairing screen before that.
 use super::{Assets, Draw, Rect, Scene, State, Target, TextField, TextStyle, WHITE, c, text};
 use crate::{
     state::agents_state::{AgentAction, OPENS_WEB_APP, now_ms},

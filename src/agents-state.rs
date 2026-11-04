@@ -1,7 +1,8 @@
-//! The Agents tab's state: which agent the spotlight shows, its actions, pairing and replies.
+//! The agents page's state, behind the T3 Code tile: which agent the spotlight shows, its
+//! actions, pairing and replies.
 //! T3 Code itself runs in `crate::t3`; this queues the commands the UI sends it in `outbox`,
 //! which the main loop hands to the connection worker.
-use super::{AGENTS_NAV, Overlay, Page, State, Target, TextField};
+use super::{Overlay, Page, State, Target, TextField};
 use crate::t3::{
     self, Action, Command, Outcome, Status,
     model::{Agent, Pending},
@@ -9,6 +10,9 @@ use crate::t3::{
     routes::{InputError, parse_pairing_input},
 };
 use std::collections::BTreeMap;
+
+/// The T3 Code tile's id: never an installed app's, and never launched or uninstalled.
+pub const AGENTS_APP_ID: &str = "luma.t3code";
 
 /// What the main loop does on the UI's behalf.
 #[derive(Debug, PartialEq)]
@@ -23,6 +27,8 @@ pub enum Outbound {
 }
 
 pub struct AgentsUi {
+    /// The tab the T3 Code tile was opened from, which Back returns to.
+    pub origin: usize,
     /// The spotlight's agent, pinned so it doesn't follow the shelf's order around.
     pub selected: Option<String>,
     pub address: String,
@@ -40,6 +46,8 @@ pub struct AgentsUi {
     pub web_origin: Option<String>,
     /// A web app path waiting for its pairing code.
     pub opening: Option<String>,
+    /// Preferences changed (the tile was pinned); the main loop saves them.
+    pub save: bool,
     /// When the web app last asked to be paired again; a second ask this soon means its
     /// session won't stick, so Luma stops rather than loop.
     #[cfg_attr(not(target_os = "android"), allow(dead_code))]
@@ -49,6 +57,7 @@ pub struct AgentsUi {
 impl Default for AgentsUi {
     fn default() -> Self {
         Self {
+            origin: 0,
             selected: None,
             address: String::new(),
             code: String::new(),
@@ -61,6 +70,7 @@ impl Default for AgentsUi {
             outbox: Vec::new(),
             web_origin: None,
             opening: None,
+            save: false,
             repaired: None,
         }
     }
@@ -102,6 +112,47 @@ pub fn now_ms() -> i64 {
 pub const OPENS_WEB_APP: bool = cfg!(target_os = "android");
 
 impl State {
+    /// The T3 Code tile sits in the app library like an installed app, in title order.
+    pub(super) fn add_agents_tile(&mut self) {
+        let apps = &mut self.inventory.apps;
+        // A failed read stays empty: the library shows what the TV reported, plus the tile.
+        if apps.is_empty() || apps.iter().any(|app| app.id == AGENTS_APP_ID) {
+            return;
+        }
+        let tile = crate::model::App::new(AGENTS_APP_ID, "T3 Code");
+        let title = tile.title.to_lowercase();
+        let index = apps
+            .iter()
+            .position(|app| app.title.to_lowercase() > title)
+            .unwrap_or(apps.len());
+        apps.insert(index, tile);
+    }
+
+    fn open_agents(&mut self) {
+        let origin = self.page_index();
+        self.open(origin);
+        self.agents_ui.origin = origin;
+        self.page = Page::Agents;
+        self.focus = self.agents_first_content();
+    }
+
+    /// Back to the tab the tile was opened from, on the tile.
+    pub(super) fn close_agents(&mut self) {
+        self.open(self.agents_ui.origin);
+        self.focus = Target::App(AGENTS_APP_ID.into());
+        self.reconcile_focus();
+    }
+
+    /// Pairing pins the tile to Home, where the web launcher put it too.
+    fn pin_agents_tile(&mut self) {
+        let mut favorites = self.preferences.favorites(&self.inventory.apps);
+        if !favorites.iter().any(|id| id == AGENTS_APP_ID) {
+            favorites.insert(0, AGENTS_APP_ID.to_owned());
+            self.preferences.favorites = Some(favorites);
+            self.agents_ui.save = true;
+        }
+    }
+
     pub fn agents_draft(&mut self, field: TextField) -> Option<&mut String> {
         match field {
             TextField::PairAddress => Some(&mut self.agents_ui.address),
@@ -203,6 +254,7 @@ impl State {
     /// OK on an Agents control; false when the focus isn't one.
     pub(super) fn activate_agents(&mut self) -> bool {
         match self.focus.clone() {
+            Target::App(id) if id == AGENTS_APP_ID => self.open_agents(),
             Target::AgentAction(index) => {
                 if let Some(action) = self.agents_actions().get(index).cloned() {
                     self.run_agent_action(action);
@@ -440,8 +492,9 @@ impl State {
                 self.agents_ui.code.clear();
                 self.agents_ui.web_origin = None;
                 self.notify(language.t("agentsPaired"));
+                self.pin_agents_tile();
                 if self.page == Page::Agents {
-                    self.focus = Target::Nav(AGENTS_NAV);
+                    self.focus = self.agents_first_content();
                 }
             }
             Outcome::Paired(Err(error)) => {
@@ -508,6 +561,54 @@ mod tests {
         state::{Preferences, State},
         t3::{pairing::Pairing, routes::Route},
     };
+
+    #[test]
+    fn the_t3_code_tile_opens_the_agents_page_and_back_returns_to_it() {
+        use super::AGENTS_APP_ID;
+        use crate::state::{Page, Target};
+        let mut state = State::new(Preferences::default());
+        let apps = crate::platform::normalize_apps(&serde_json::json!([
+            {"id": "netflix", "title": "Netflix"},
+            {"id": "youtube.leanback.v4", "title": "YouTube"},
+            {"id": "com.apple.appletv", "title": "Apple TV"},
+        ]))
+        .unwrap();
+        state.set_inventory(
+            crate::model::Inventory {
+                apps,
+                inputs: vec![],
+            },
+            None,
+        );
+        let ids: Vec<_> = state
+            .inventory
+            .apps
+            .iter()
+            .map(|app| app.id.as_str())
+            .collect();
+        assert_eq!(
+            ids,
+            [
+                "com.apple.appletv",
+                "netflix",
+                AGENTS_APP_ID,
+                "youtube.leanback.v4"
+            ],
+            "in title order"
+        );
+        assert_eq!(state.inventory.apps[2].brand, "t3-code");
+        assert!(!crate::platform::can_uninstall(AGENTS_APP_ID));
+
+        state.open(1);
+        state.focus = Target::App(AGENTS_APP_ID.into());
+        assert!(state.activate().is_empty(), "the tile launches nothing");
+        assert_eq!(state.page, Page::Agents);
+        assert_eq!(state.page_index(), 1, "Apps stays highlighted");
+        assert_eq!(state.focus, Target::PairAddress);
+        state.back();
+        assert_eq!(state.page, Page::Apps);
+        assert_eq!(state.focus, Target::App(AGENTS_APP_ID.into()));
+    }
 
     #[test]
     fn homeguard_gets_the_pairing_in_the_shape_agent_watch_reads() {

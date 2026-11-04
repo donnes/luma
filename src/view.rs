@@ -5,8 +5,8 @@ use crate::{
     renderer::{Color, Draw, TextStyle, WHITE},
     state::{
         APPS_COLUMNS, Control, HOME_FADE_LEFT, HOME_FADE_RIGHT, HOME_STRIP_LEFT, HOME_STRIP_RIGHT,
-        HOME_TILE_PITCH, HOME_TILE_WIDTH, KEYS, NAV_ORDER, Overlay, Page, Rect, SYSTEM_SECTION,
-        State, Subpage, Target, TextField, WIDGETS_SECTION,
+        HOME_TILE_PITCH, HOME_TILE_WIDTH, KEYS, Overlay, Page, Rect, SYSTEM_SECTION, State,
+        Subpage, Target, TextField, WIDGETS_SECTION,
     },
     weather::{self, Unit},
 };
@@ -18,9 +18,6 @@ use time::OffsetDateTime;
 
 #[path = "agents-view.rs"]
 mod agents_view;
-
-/// Tab labels by page index; `NAV_ORDER` places them.
-const NAV_LABELS: [&str; 4] = ["home", "apps", "settings", "agents"];
 
 const MAIN_TOP: f32 = 108.8;
 const FACE_HEIGHT: f32 = 154.4;
@@ -484,19 +481,18 @@ fn text(size: f32, weight: u16, tracking: f32) -> TextStyle {
 
 pub struct Navigation {
     pub surface: Rect,
-    /// By page index.
-    pub items: [Rect; 4],
+    pub items: [Rect; 3],
 }
 pub fn navigation(assets: &Assets, language: Language) -> Navigation {
-    let widths = NAV_LABELS
+    let widths = ["home", "apps", "settings"]
         .map(|key| (assets.width(language.t(key), text(20.8, 550, -0.02)) + 46.4).max(99.2));
-    let width = widths.iter().sum::<f32>() + 12.8 * (NAV_LABELS.len() - 1) as f32 + 19.6;
+    let width = widths.iter().sum::<f32>() + 25.6 + 19.6;
     let mut x = (1920. - width) / 2. + 9.8;
-    let mut items = [Rect::default(); 4];
-    for page in NAV_ORDER {
-        items[page] = Rect::new(x, 52.3, widths[page], 49.);
-        x += widths[page] + 12.8;
-    }
+    let items = widths.map(|width| {
+        let rect = Rect::new(x, 52.3, width, 49.);
+        x += width + 12.8;
+        rect
+    });
     Navigation {
         surface: Rect::new((1920. - width) / 2., 42.5, width, 68.6),
         items,
@@ -751,7 +747,7 @@ fn header(
         // the destination tab's control rectangle.
         out.border(pill.inset(-5.), 37., 2., c(0xf0f0f0, 0.95));
     }
-    for (index, key) in NAV_LABELS.into_iter().enumerate() {
+    for (index, key) in ["home", "apps", "settings"].into_iter().enumerate() {
         let rect = layout.items[index];
         out.text(
             language.t(key),

@@ -165,6 +165,7 @@ const surfaces = {
   filmin: ['#10372f', '#091c18'],
   'nrk-tv': ['#073b84', '#04214b'],
   'tv2-play': ['#1d1530', '#0b0812'],
+  't3-code': ['#2d2457', '#120f26'],
 };
 for (const [brand, [top, bottom]] of Object.entries(surfaces)) {
   const fill =

@@ -43,10 +43,6 @@ pub enum Page {
     Agents,
 }
 
-/// Tabs in display order, as page indices: Agents is page 3 but sits before Settings.
-pub const NAV_ORDER: [usize; 4] = [0, 1, 3, 2];
-pub const AGENTS_NAV: usize = 3;
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum Target {
     Nav(usize),
@@ -461,7 +457,8 @@ impl State {
             Page::Home => 0,
             Page::Apps => 1,
             Page::Settings => 2,
-            Page::Agents => AGENTS_NAV,
+            // Opened from a tile; the tab it came from stays highlighted.
+            Page::Agents => self.agents_ui.origin,
         }
     }
 
@@ -497,7 +494,6 @@ impl State {
         self.page = match index {
             1 => Page::Apps,
             2 => Page::Settings,
-            AGENTS_NAV => Page::Agents,
             _ => Page::Home,
         };
         self.focus = Target::Nav(self.page_index());
@@ -674,6 +670,7 @@ impl State {
 
     pub fn set_inventory(&mut self, next: Inventory, warning: Option<String>) {
         self.inventory.apps = next.apps;
+        self.add_agents_tile();
         self.sync_custom_tiles();
         if let Some(warning) = warning {
             self.notify(warning);
@@ -1411,13 +1408,9 @@ impl State {
                 }
             }
             if let Target::Nav(index) = self.focus {
-                let slot = NAV_ORDER
-                    .iter()
-                    .position(|page| *page == index)
-                    .unwrap_or(0);
                 let next = match direction {
-                    Direction::Left if slot > 0 => Some(NAV_ORDER[slot - 1]),
-                    Direction::Right if slot + 1 < NAV_ORDER.len() => Some(NAV_ORDER[slot + 1]),
+                    Direction::Left if index > 0 => Some(index - 1),
+                    Direction::Right if index < 2 => Some(index + 1),
                     _ => None,
                 };
                 if let Some(next) = next {
@@ -2622,6 +2615,10 @@ impl State {
             self.query.clear();
             self.focus = Target::Nav(1);
             self.scroll = 0.;
+            return vec![];
+        }
+        if self.page == Page::Agents {
+            self.close_agents();
             return vec![];
         }
         if self.page != Page::Home {

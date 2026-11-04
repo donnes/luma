@@ -3,7 +3,7 @@
 A native launcher for rooted LG webOS TVs, inspired by Apple TV.
 
 This is a fork of [ecklf/lg-luma](https://github.com/ecklf/lg-luma). It follows upstream's native
-Rust app and adds a [Fire TV build](platforms/firetv/README.md) of it, and an Agents tab for
+Rust app and adds a [Fire TV build](platforms/firetv/README.md) of it, and a T3 Code tile for
 [T3 Code](https://github.com/pingdotgg/t3code): pair once, then approve, answer, reply to and stop
 agents from the couch.
 

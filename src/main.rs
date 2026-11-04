@@ -1099,6 +1099,11 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<(), String> {
         for event in agents.events() {
             state.agents_event(event);
         }
+        if std::mem::take(&mut state.agents_ui.save)
+            && let Err(error) = storage::save(&preferences_path, &state.preferences)
+        {
+            eprintln!("{error}");
+        }
         for outbound in std::mem::take(&mut state.agents_ui.outbox) {
             match outbound {
                 Outbound::Command(command) => agents.send(command),

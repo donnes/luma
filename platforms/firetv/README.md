@@ -121,7 +121,7 @@ request, and remembers which across restarts for as long as the request is pendi
 an alert whose request ends first, say because it was answered elsewhere, is
 dropped.
 
-The Agents tab pairs Luma with T3 Code and hands the pairing to HomeGuard
+The T3 Code tile opens the agents page, which pairs Luma with T3 Code and hands the pairing to HomeGuard
 (`watchAgents`), so alerts follow it, and an unpair clears HomeGuard's copy. On a stick
 that HomeGuard already watched for the web launcher, Luma carries that pairing over on
 first start.
