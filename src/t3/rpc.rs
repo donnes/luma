@@ -339,7 +339,6 @@ mod tests {
             assert_eq!(request["_tag"], "Request");
             assert_eq!(request["tag"], "orchestration.subscribeShell");
             let id = request["id"].as_str().unwrap().to_owned();
-            drop(read);
             socket
                 .send(Frame::text(
                     json!([

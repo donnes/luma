@@ -638,8 +638,8 @@ fn apply_shell(shell: &mut Shell, values: Vec<Value>) {
 fn probe(routes: &[Route], environment: &str) -> Vec<Route> {
     let checks: Vec<_> = routes
         .iter()
-        .cloned()
         .map(|route| {
+            let route = route.clone();
             let environment = environment.to_owned();
             thread::spawn(move || {
                 pairing::describe(&route, PROBE)
